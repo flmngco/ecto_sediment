@@ -85,3 +85,5 @@ sediment.
 * `examples/s3_demo`: a runnable write / `kill -9` / wipe / restore
   walkthrough, also as a release.
 * Hex packaging: `SEDIMENT_HEX=1 mix hex.build` (requires sediment on Hex).
+  sediment's NIF comes precompiled for the common targets, so no Rust
+  toolchain is needed to use ecto_sediment.

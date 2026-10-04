@@ -13,10 +13,13 @@ defp deps do
 end
 ```
 
-ecto_sediment brings in `sediment`, the driver, which compiles its NIF from
-source on the first build: you need Elixir 1.18+ (OTP 27+) and a Rust
-toolchain (1.91+, e.g. via `rustup`), and the first compile takes a few
-minutes.
+ecto_sediment brings in `sediment`, the driver, and needs Elixir 1.18+
+(OTP 27+). The driver's NIF is downloaded precompiled for Linux (glibc and
+musl, x86_64 and aarch64), macOS (Apple silicon and Intel) and Windows
+(x86_64), so no Rust toolchain is needed. On other targets, or to build from
+source anyway, set `SEDIMENT_BUILD=1`, install Rust 1.91 or later and add
+`{:rustler, "~> 0.38", runtime: false}` to your dependencies; see sediment's
+README.
 
 With [Igniter](https://hexdocs.pm/igniter), `mix igniter.install
 ecto_sediment` (add `--s3` for an S3-backed prod repo) does the

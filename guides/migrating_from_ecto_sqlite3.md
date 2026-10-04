@@ -13,8 +13,9 @@ applications switch with a few lines of configuration.
    {:ecto_sediment, "~> 0.1"}
    ```
 
-   sediment, the driver, comes with it and compiles its NIF from source: you
-   need a Rust toolchain (see the README's installation section).
+   sediment, the driver, comes with it, with a precompiled NIF for the
+   common targets; others need a Rust toolchain (see the README's
+   installation section).
 
 2. Change the adapter:
 

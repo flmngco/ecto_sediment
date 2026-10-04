@@ -10,7 +10,9 @@ vectors, concurrent transactions), the adapter exposes it as an extension.
 ## Development setup
 
 You need Elixir 1.18+ (OTP 27+), a Rust toolchain (1.91+, e.g. via `rustup`)
-and docker for the S3 tests.
+and docker for the S3 tests. A Sediment checkout always builds its NIF from
+source, so ecto_sediment adds Rustler to its dependencies next to the path
+dependency.
 
 ecto_sediment depends on Sediment by path. Check out both repositories side by
 side:
