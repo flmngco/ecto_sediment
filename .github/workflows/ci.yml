@@ -73,6 +73,12 @@ jobs:
 
       - run: mix deps.get
 
+      # The cache key covers the lockfiles, not sediment's sources, and the
+      # NIF lives in the fresh checkout: always build sediment from it
+      # (cargo's target/ is still cached).
+      - name: Build sediment from the checkout
+        run: rm -rf _build/*/lib/sediment
+
       - name: Wait for SeaweedFS
         run: |
           for i in $(seq 1 60); do
