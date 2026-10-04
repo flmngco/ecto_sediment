@@ -15,7 +15,7 @@ end
 
 ecto_sediment brings in `sediment`, the driver, which compiles its NIF from
 source on the first build: you need Elixir 1.18+ (OTP 27+) and a Rust
-toolchain (1.85+, e.g. via `rustup`), and the first compile takes a few
+toolchain (1.91+, e.g. via `rustup`), and the first compile takes a few
 minutes.
 
 With [Igniter](https://hexdocs.pm/igniter), `mix igniter.install
@@ -116,7 +116,7 @@ SeaweedFS.
 
 ## Background jobs
 
-Oban works with `engine: Oban.Engines.Lite`; set `migrator: Oban.Migrations.SQLite`
+Oban (2.24.0 or later) works with `engine: Oban.Engines.Lite`; set `migrator: Oban.Migrations.SQLite`
 in the repo config, since Oban recognizes adapters by module name. See the
 README's Oban section.
 

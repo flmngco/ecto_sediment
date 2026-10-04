@@ -71,7 +71,7 @@ sediment.
 
 ### Integrations
 
-* Oban: `Oban.Engines.Lite` works (set `migrator: Oban.Migrations.SQLite` in
+* Oban (2.24.0 or later): `Oban.Engines.Lite` works (set `migrator: Oban.Migrations.SQLite` in
   the repo config); tested in WAL, MVCC with `BEGIN CONCURRENT` and S3 modes.
 * Igniter installer: `mix igniter.install ecto_sediment` / `mix ecto_sediment.install`
   sets up a repo like Phoenix does for ecto_sqlite3, optionally S3-backed.
@@ -79,8 +79,9 @@ sediment.
 ### Docs and tooling
 
 * Guides: getting started, S3-backed repos (configuration, releases, deploys
-  with the single-writer lease, errors, restores, performance), migrating from
-  ecto_sqlite3.
+  with the single-writer lease, errors, restores, performance), multi-tenant
+  apps (a repo per tenant, started on demand, with idle shutdown), migrating
+  from ecto_sqlite3.
 * `examples/s3_demo`: a runnable write / `kill -9` / wipe / restore
   walkthrough, also as a release.
 * Hex packaging: `SEDIMENT_HEX=1 mix hex.build` (requires sediment on Hex).

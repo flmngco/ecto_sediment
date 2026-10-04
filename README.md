@@ -49,7 +49,7 @@ end
 
 ecto_sediment brings in `sediment`, the driver, which compiles its NIF from
 source on the first build: you need Elixir 1.18+ (OTP 27+) and a Rust
-toolchain (1.85+, e.g. via `rustup`), and the first compile takes a few
+toolchain (1.91+, e.g. via `rustup`), and the first compile takes a few
 minutes.
 
 ### With Igniter
@@ -258,8 +258,11 @@ config :my_app, MyApp.Repo,
 
 * Durability is asynchronous by default (`durability: :async`): commits
   return once they are committed locally and reach S3 in the background a
-  moment later (at most `:max_lag_ms`, 1 s by default), so a crash can lose
-  the last ones, but a restore is always a consistent prefix. `sync: true` on
+  moment later, so a crash can lose the last ones, but a restore is always a
+  consistent prefix. `:max_lag_ms` (1 s by default) is a backpressure
+  threshold, not a bound on the loss: new commits wait once the oldest
+  un-uploaded one is that old, and a crash also loses the upload in flight
+  (and up to `:upload_interval_ms` of commits, if set). `sync: true` on
   any `Repo` function (e.g. `Repo.transaction(fun, sync: true)`) waits for a
   commit, `Ecto.Adapters.Sediment.s3_flush/2` for everything so far, and
   `durability: :sync` makes every commit wait. See the S3 guide's
@@ -303,6 +306,9 @@ A runnable walkthrough (write, `kill -9`, wipe the local copy, restore) is in
 ## Oban
 
 Oban works on ecto_sediment with `Oban.Engines.Lite`, the engine for SQLite.
+It needs Oban 2.24.0 or later: Oban 2.23 fails to start with an adapter it
+doesn't know (it calls `repo().config()` at boot) whenever `:testing` isn't
+`:disabled`.
 Oban recognizes adapters by module name, so tell it which migrations to use:
 
 ```elixir

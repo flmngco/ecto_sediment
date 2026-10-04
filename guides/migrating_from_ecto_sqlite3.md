@@ -34,7 +34,16 @@ applications switch with a few lines of configuration.
    `Ecto.Adapters.SQLite3.TypeExtension` to `Ecto.Adapters.Sediment.TypeExtension`
    (same callbacks), and `Exqlite.TypeExtension` to `Sediment.TypeExtension`.
 
-5. Check the repo options against the list below.
+5. Rename the driver modules your own code names: errors raised by the
+   driver are `Sediment.Error` instead of `Exqlite.Error`, so change
+   `rescue Exqlite.Error` and `assert_raise Exqlite.Error, ...` (for
+   example around a trigger's `RAISE(ABORT, ...)`); a constraint violation
+   still becomes a changeset error. Raw database handles move from
+   `Exqlite.Sqlite3` to `Sediment.Engine` (same functions: `open/2`,
+   `execute/2`, `prepare/2`, `fetch_all/2`, `release/2`, `close/1`, ...),
+   and `Exqlite.Basic` to `Sediment.Basic`.
+
+6. Check the repo options against the list below.
 
 Existing database files open directly: Turso reads the SQLite file format.
 

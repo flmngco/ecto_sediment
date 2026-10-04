@@ -9,7 +9,7 @@ vectors, concurrent transactions), the adapter exposes it as an extension.
 
 ## Development setup
 
-You need Elixir 1.18+ (OTP 27+), a Rust toolchain (1.85+, e.g. via `rustup`)
+You need Elixir 1.18+ (OTP 27+), a Rust toolchain (1.91+, e.g. via `rustup`)
 and docker for the S3 tests.
 
 ecto_sediment depends on Sediment by path. Check out both repositories side by

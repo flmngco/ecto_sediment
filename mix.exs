@@ -62,7 +62,7 @@ defmodule EctoSediment.MixProject do
       sediment_dep(),
       {:jason, "~> 1.0"},
       {:temp, "~> 0.4", only: [:test]},
-      {:oban, "~> 2.19", only: :test},
+      {:oban, "~> 2.24", only: :test},
       {:igniter, "~> 0.6", optional: true},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:ex_slop, "~> 0.4", only: [:dev, :test], runtime: false},
