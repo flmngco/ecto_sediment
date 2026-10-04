@@ -473,6 +473,11 @@ Every `Ecto.Adapters.SQLite3` option and feature, and its status in
     primary key, say). Prefix that column with a unary plus so Turso doesn't
     use the index: `on: fragment("+?", p.id) == c.parent_id`. (Unary plus
     also drops the column's affinity and collation.)
+  * Dropping a column that has its own `REFERENCES` fails with
+    `unknown column "parent_id" in foreign key definition`, so `remove`
+    of such a column, and rolling back `add :parent_id, references(...)`,
+    fail. Write the migration's `down` as a table rebuild instead; see
+    "Behaviour to check in your application" in the migrating guide.
 * **Other Turso SQL gaps** affect raw SQL rather than the adapter. In
   turso_core 0.8.1, `INSTEAD OF` triggers (triggers on views) are not
   supported. Recursive CTEs, all window functions including custom frames,

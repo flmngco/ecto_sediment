@@ -81,6 +81,33 @@ Everything else (`:database`, `:pool_size`, `:default_transaction_mode`,
   Use `{:replace_all_except, [:id]}` or `{:replace, fields}`.
 * `LIKE` also matches `BLOB` columns.
 * Triggers on views (`INSTEAD OF`) are not supported.
+* Dropping a column that has its own `REFERENCES` fails with
+  `unknown column "author_id" in foreign key definition` (a turso_core 0.8.1
+  bug). That breaks `remove :author_id` and the rollback of
+  `add :author_id, references(:authors)`. Give such a migration an explicit
+  `down` that rebuilds the table without the column, then recreate its
+  indexes:
+
+  ```elixir
+  def up do
+    alter table(:books) do
+      add :author_id, references(:authors, on_delete: :nilify_all)
+    end
+  end
+
+  def down do
+    create table(:books_new) do
+      add :title, :string
+    end
+
+    execute "INSERT INTO books_new (id, title) SELECT id, title FROM books"
+    drop table(:books)
+    rename table(:books_new), to: table(:books)
+  end
+  ```
+
+  Nothing else may reference the table while it is rebuilt (drop and
+  recreate those foreign keys too).
 * Error messages raised by the adapter for unsupported features say "Turso"
   instead of "SQLite3". Constraint errors map to changeset errors exactly as
   before.
