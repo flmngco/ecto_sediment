@@ -48,6 +48,10 @@ sediment.
 * `checkpoint/2` and `mix ecto.sediment.checkpoint`; point-in-time restore with
   `s3_restore/3` and `mix ecto.sediment.s3.restore` (which never replace an
   existing file); read-only replica repos with `s3_refresh/1`; `s3_info/1`.
+* `s3_import/3` (`mix ecto.sediment.s3.import`) moves an existing database
+  file into S3; `export_sqlite/3` (`mix ecto.sediment.export_sqlite`) writes
+  a plain SQLite copy. Like `s3_restore/3`, both take a repo module or its
+  `:s3` options (for dynamic repos).
 
 ### Robustness
 

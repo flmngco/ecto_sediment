@@ -174,6 +174,33 @@ defmodule Ecto.Integration.MultiTenantTest do
     :ok = Sediment.Engine.close(db)
   end
 
+  test "a tenant is exported to a plain SQLite file from its S3 options",
+       %{dir: dir, repo_config: repo_config} do
+    insert!("ollivander", "o1")
+    insert!("gringotts", "g1")
+
+    :ok =
+      MyApp.Tenants.with_tenant("ollivander", fn ->
+        Ecto.Adapters.Sediment.s3_flush(MyApp.Repo)
+      end)
+
+    config = repo_config.("ollivander")
+    file = Path.join(dir, "ollivander-sqlite.db")
+
+    # while the tenant stays open: S3 is only read
+    assert {:ok, _} =
+             Ecto.Adapters.Sediment.export_sqlite(config[:s3], file,
+               encryption: config[:encryption]
+             )
+
+    assert <<"SQLite format 3", 0, _::binary>> = File.read!(file)
+    {:ok, db} = Sediment.Engine.open(file)
+    {:ok, stmt} = Sediment.Engine.prepare(db, "SELECT body FROM notes")
+    assert {:ok, [["o1"]]} = Sediment.Engine.fetch_all(db, stmt)
+    :ok = Sediment.Engine.release(db, stmt)
+    :ok = Sediment.Engine.close(db)
+  end
+
   test "a tenant held by another node can't start here; it can once that node lets go",
        %{repo_config: repo_config} do
     # "node-b" holds the tenant's lease

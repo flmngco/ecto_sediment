@@ -273,9 +273,20 @@ time. Keep migrations backward compatible (add columns and tables, remove
 them in a later deploy), since tenants migrate one by one.
 
 An existing database, for example a tenant you're moving from another
-system, becomes a tenant with `Ecto.Adapters.Sediment.s3_import/3` (with
-`:s3`): import it into the tenant's empty prefix before its first use. See
-"Importing an existing database" in the [S3 guide](s3.md).
+system, becomes a tenant with `Ecto.Adapters.Sediment.s3_import/3`: import it
+into the tenant's empty prefix before its first use. A tenant's repo is
+dynamic, so pass its `:s3` options rather than `MyApp.Repo` (whose static
+configuration has no tenant):
+
+```elixir
+config = MyApp.TenantConfig.repo(tenant_id)
+Ecto.Adapters.Sediment.s3_import(config[:s3], "/imports/#{tenant_id}.db",
+  encryption: config[:encryption]
+)
+```
+
+Add `source_encryption:` for an encrypted source file. See "Importing an
+existing database" in the [S3 guide](s3.md).
 
 ## Resources and idle shutdown
 
@@ -383,7 +394,15 @@ instead of waiting for it to expire.
   It only reads S3, so it is safe while the tenant is open.
 * **Export.** `Ecto.Adapters.Sediment.export_sqlite/3` writes a tenant's
   database as a plain SQLite file, for a tenant that leaves or for analysis
-  with SQLite tools.
+  with SQLite tools. Like the restore, it takes the tenant's `:s3` options
+  and only reads S3:
+
+  ```elixir
+  config = MyApp.TenantConfig.repo(tenant_id)
+  Ecto.Adapters.Sediment.export_sqlite(config[:s3], "/tmp/#{tenant_id}-sqlite.db",
+    encryption: config[:encryption]
+  )
+  ```
 * **Deleting a tenant.** Stop the tenant everywhere (no writer and no replica
   may be open on its prefix), then delete its local files and every object
   under its S3 prefix, `lease.json` and `manifest.json` included.

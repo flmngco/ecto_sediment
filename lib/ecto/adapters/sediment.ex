@@ -695,15 +695,23 @@ defmodule Ecto.Adapters.Sediment do
   (stop the application first). The repo's `:encryption` (a key, or `false`)
   is used for the source.
 
+  `repo` is a repo module (its `:s3`, `:database` and `:encryption`
+  configuration are used) or a keyword list of `:s3` options, for example of
+  a dynamic repo.
+
   ## Options
 
-    * `:source` - export this database file instead.
+    * `:source` - export this database file instead (with a repo module).
+    * `:encryption` - the source's key, or `false` for an unencrypted
+      database; defaults to the repo's `:encryption`.
     * `:drop_fts` - leave Turso FTS indexes out of the copy (without it, a
       database with any is refused).
   """
-  @spec export_sqlite(Ecto.Repo.t(), Path.t(), Keyword.t()) ::
+  @spec export_sqlite(Ecto.Repo.t() | Keyword.t(), Path.t(), Keyword.t()) ::
           {:ok, map()} | {:error, term()}
-  def export_sqlite(repo, dest, opts \\ []) when is_atom(repo) do
+  def export_sqlite(repo_or_s3, dest, opts \\ [])
+
+  def export_sqlite(repo, dest, opts) when is_atom(repo) do
     config = repo.config()
     {source, opts} = Keyword.pop(opts, :source)
 
@@ -714,16 +722,15 @@ defmodule Ecto.Adapters.Sediment do
       end
 
     case {source, config[:s3]} do
-      {nil, nil} ->
-        Sediment.export_sqlite(config[:database], dest, opts)
-
-      {nil, s3} ->
-        s3 = Connection.normalize_opts(s3: s3)[:s3]
-        Sediment.export_sqlite(nil, dest, Keyword.put(opts, :from_s3, s3))
-
-      {path, _} ->
-        Sediment.export_sqlite(path, dest, opts)
+      {nil, nil} -> Sediment.export_sqlite(config[:database], dest, opts)
+      {nil, s3} -> export_sqlite(s3, dest, opts)
+      {path, _} -> Sediment.export_sqlite(path, dest, opts)
     end
+  end
+
+  def export_sqlite(s3, dest, opts) when is_list(s3) do
+    s3 = Connection.normalize_opts(s3: s3)[:s3]
+    Sediment.export_sqlite(nil, dest, Keyword.put(opts, :from_s3, s3))
   end
 
   @impl Ecto.Adapter.Schema
