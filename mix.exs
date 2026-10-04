@@ -59,7 +59,6 @@ defmodule EctoSediment.MixProject do
       {:decimal, "~> 3.0"},
       {:ecto_sql, "~> 3.14"},
       {:ecto, "~> 3.14"},
-      sediment_dep(),
       {:jason, "~> 1.0"},
       {:temp, "~> 0.4", only: [:test]},
       {:oban, "~> 2.24", only: :test},
@@ -70,18 +69,22 @@ defmodule EctoSediment.MixProject do
       {:ex_dna, "~> 1.0", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.0", only: [:dev, :test], runtime: false},
       {:vibe_kit, "~> 0.1", only: :dev, runtime: false}
-    ]
+    ] ++ sediment_deps()
   end
 
   # A path dependency in a checkout of this repository (it has test/, which
   # the Hex package doesn't). The Hex package, and `SEDIMENT_HEX=1` in a
   # checkout (`mix hex.build`, the release workflow), depend on sediment from
-  # Hex: Hex packages can only depend on Hex packages.
-  defp sediment_dep do
+  # Hex: Hex packages can only depend on Hex packages. A sediment checkout
+  # builds its NIF from source, which needs Rustler.
+  defp sediment_deps do
     if System.get_env("SEDIMENT_HEX") || not File.dir?(Path.join(__DIR__, "test")) do
-      {:sediment, "~> 0.1.0"}
+      [{:sediment, "~> 0.1.0"}]
     else
-      {:sediment, path: System.get_env("SEDIMENT_PATH", "../sediment")}
+      [
+        {:sediment, path: System.get_env("SEDIMENT_PATH", "../sediment")},
+        {:rustler, "~> 0.38", runtime: false}
+      ]
     end
   end
 
