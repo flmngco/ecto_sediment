@@ -44,14 +44,10 @@ jobs:
           path: ecto_sediment
           persist-credentials: false
 
-      # While sediment is private, GITHUB_TOKEN can't read it: the secret
-      # SEDIMENT_TOKEN (read-only Contents access to sediment) is used instead.
-      # Once sediment is public the secret can be deleted.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ github.repository_owner }}/sediment
           path: sediment
-          token: ${{ secrets.SEDIMENT_TOKEN || github.token }}
           persist-credentials: false
 
       - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1

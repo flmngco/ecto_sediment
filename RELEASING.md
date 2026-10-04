@@ -69,9 +69,6 @@ the `hex` environment (never at the repository or organization level).
       pull request workflows; "Allow GitHub Actions to create and approve
       pull requests" disabled; workflow permissions read-only by default.
 - [ ] Secret scanning and push protection enabled.
-- [ ] While Sediment is private: the secret `SEDIMENT_TOKEN` (a fine-grained
-      token with read-only Contents access to the sediment repository) for
-      CI's checkout of it. Delete it once Sediment is public.
 
 ## CI security
 
