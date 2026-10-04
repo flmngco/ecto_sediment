@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 # ecto_sediment depends on sediment by path (`../sediment`, see
-# `sediment_dep/0` in mix.exs), so both repositories are checked out side
+# `sediment_deps/0` in mix.exs), so both repositories are checked out side
 # by side. S3 suites use SeaweedFS on 127.0.0.1:8333; the s3_fault test starts
 # (and pauses) a SeaweedFS container of its own through the runner's docker.
 

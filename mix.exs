@@ -72,20 +72,29 @@ defmodule EctoSediment.MixProject do
     ] ++ sediment_deps()
   end
 
-  # A path dependency in a checkout of this repository (it has test/, which
-  # the Hex package doesn't). The Hex package, and `SEDIMENT_HEX=1` in a
-  # checkout (`mix hex.build`, the release workflow), depend on sediment from
-  # Hex: Hex packages can only depend on Hex packages. A sediment checkout
-  # builds its NIF from source, which needs Rustler.
+  # A path dependency on a sediment checkout next to a checkout of this
+  # repository (it has test/, which the Hex package doesn't), or at
+  # `SEDIMENT_PATH`. Otherwise, as in the Hex package, a git dependency on
+  # this repository (whose deps/sediment, if any, is a Hex copy without
+  # .git) and `SEDIMENT_HEX=1` (`mix hex.build`, the release workflow),
+  # sediment comes from Hex. A sediment checkout builds its NIF from source,
+  # which needs Rustler.
   defp sediment_deps do
-    if System.get_env("SEDIMENT_HEX") || not File.dir?(Path.join(__DIR__, "test")) do
+    path = System.get_env("SEDIMENT_PATH")
+
+    if System.get_env("SEDIMENT_HEX") || (is_nil(path) && not sediment_checkout?()) do
       [{:sediment, "~> 0.1.0"}]
     else
       [
-        {:sediment, path: System.get_env("SEDIMENT_PATH", "../sediment")},
+        {:sediment, path: path || "../sediment"},
         {:rustler, "~> 0.38", runtime: false}
       ]
     end
+  end
+
+  defp sediment_checkout? do
+    File.dir?(Path.join(__DIR__, "test")) and
+      File.exists?(Path.expand("../sediment/.git", __DIR__))
   end
 
   defp package do
