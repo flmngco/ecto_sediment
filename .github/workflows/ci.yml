@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Read-only token; no workflow here needs more.
+permissions:
+  contents: read
+
+# ecto_sediment depends on sediment by path (`../sediment`, see
+# `sediment_dep/0` in mix.exs), so both repositories are checked out side
+# by side. S3 suites use SeaweedFS on 127.0.0.1:8333; the s3_fault test starts
+# (and pauses) a SeaweedFS container of its own through the runner's docker.
+
+jobs:
+  elixir:
+    name: Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest supported versions run the test suites.
+          - elixir: "1.18.4"
+            otp: "27.3"
+          # The newest run everything `mix ci` does (linters included).
+          - elixir: "1.20.1"
+            otp: "29.0"
+            lint: true
+    services:
+      seaweedfs:
+        # pinned: newer images refuse anonymous S3 requests (403) by default
+        image: chrislusf/seaweedfs:4.48
+        ports:
+          - 8333:8333
+    defaults:
+      run:
+        working-directory: ecto_sediment
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: ecto_sediment
+          persist-credentials: false
+
+      # While sediment is private, GITHUB_TOKEN can't read it: the secret
+      # SEDIMENT_TOKEN (read-only Contents access to sediment) is used instead.
+      # Once sediment is public the secret can be deleted.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository_owner }}/sediment
+          path: sediment
+          token: ${{ secrets.SEDIMENT_TOKEN || github.token }}
+          persist-credentials: false
+
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          elixir-version: ${{ matrix.elixir }}
+          otp-version: ${{ matrix.otp }}
+
+      # pinned by SHA, so the toolchain can't come from the ref name
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          toolchain: stable
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ecto_sediment/deps
+            ecto_sediment/_build
+            sediment/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('ecto_sediment/mix.lock', 'sediment/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-
+
+      - run: mix deps.get
+
+      - name: Wait for SeaweedFS
+        run: |
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT http://127.0.0.1:8333/ci-probe || true)
+            [ "$code" = "200" ] && exit 0
+            sleep 1
+          done
+          echo "SeaweedFS did not come up"; exit 1
+
+      - name: mix ci (compile, format, unit and integration suites, s3_fault, credo, ex_dna, reach)
+        if: matrix.lint
+        run: mix ci
+
+      - name: mix test
+        if: ${{ !matrix.lint }}
+        run: MIX_ENV=test mix test
+
+      - name: Integration suites (WAL, MVCC, concurrent, encryption, S3, S3 group commit)
+        if: ${{ !matrix.lint }}
+        run: MIX_ENV=test mix test.integration

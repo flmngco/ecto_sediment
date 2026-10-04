@@ -1,0 +1,89 @@
+name: Release
+
+# Publishes ecto_sediment to Hex when a GitHub release is published. See
+# RELEASING.md for the steps and the repository settings this relies on.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to Hex
+    runs-on: ubuntu-24.04
+    # HEX_API_KEY lives only in this environment, which requires a reviewer
+    # and only deploys tags matching v*.
+    environment: hex
+    permissions:
+      contents: read
+    services:
+      seaweedfs:
+        # pinned: newer images refuse anonymous S3 requests (403) by default
+        image: chrislusf/seaweedfs:4.48
+        ports:
+          - 8333:8333
+    env:
+      # Build against sediment from Hex, as the package will be used
+      SEDIMENT_HEX: "1"
+    steps:
+      # A clean build from the tag: no caches anywhere in this workflow.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          elixir-version: "1.20.1"
+          otp-version: "29.0"
+
+      # pinned by SHA, so the toolchain can't come from the ref name
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          toolchain: stable
+
+      - name: Check the tag, the version, the CHANGELOG and main
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(sed -n 's/^  @version "\(.*\)"$/\1/p' mix.exs)
+          if [ "$TAG" != "v$version" ]; then
+            echo "tag $TAG doesn't match mix.exs version $version"; exit 1
+          fi
+          heading=$(grep -m1 "^## $version" CHANGELOG.md || true)
+          if [ -z "$heading" ] || echo "$heading" | grep -qi unreleased; then
+            echo "CHANGELOG.md has no released entry for $version"; exit 1
+          fi
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "the tagged commit is not on main"; exit 1
+          fi
+
+      - name: Check that the required sediment version is on Hex
+        run: |
+          constraint=$(sed -n 's/.*{:sediment, "\(.*\)"}.*/\1/p' mix.exs)
+          echo "sediment $constraint"
+          if ! mix deps.get; then
+            echo "no sediment release on Hex matches $constraint: publish sediment first"
+            exit 1
+          fi
+
+      - name: Wait for SeaweedFS
+        run: |
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT http://127.0.0.1:8333/ci-probe || true)
+            [ "$code" = "200" ] && exit 0
+            sleep 1
+          done
+          echo "SeaweedFS did not come up"; exit 1
+
+      - name: mix ci
+        run: mix ci
+
+      - name: Publish
+        env:
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+        run: mix hex.publish --yes
