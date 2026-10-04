@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.0-beta.1 (2026-10-04)
 
 First version: a port of ecto_sqlite3 0.25 to Turso (turso_core 0.8.1) via
 sediment.
