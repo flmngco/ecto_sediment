@@ -77,18 +77,14 @@ defmodule EctoSediment.MixProject do
   # `SEDIMENT_PATH`. Otherwise, as in the Hex package, a git dependency on
   # this repository (whose deps/sediment, if any, is a Hex copy without
   # .git) and `SEDIMENT_HEX=1` (`mix hex.build`, the release workflow),
-  # sediment comes from Hex. A sediment checkout builds its NIF from source,
-  # which needs Rustler.
+  # sediment comes from Hex.
   defp sediment_deps do
     path = System.get_env("SEDIMENT_PATH")
 
     if System.get_env("SEDIMENT_HEX") || (is_nil(path) && not sediment_checkout?()) do
       [{:sediment, "~> 0.1.0"}]
     else
-      [
-        {:sediment, path: path || "../sediment"},
-        {:rustler, "~> 0.38", runtime: false}
-      ]
+      [{:sediment, path: path || "../sediment"}]
     end
   end
 
