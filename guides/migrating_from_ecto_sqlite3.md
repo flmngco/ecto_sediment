@@ -87,9 +87,19 @@ Everything else (`:database`, `:pool_size`, `:default_transaction_mode`,
   bug). That breaks `remove :author_id` and the rollback of
   `add :author_id, references(:authors)`. Give such a migration an explicit
   `down` that rebuilds the table without the column, then recreate its
-  indexes:
+  indexes and triggers.
+
+  The rebuild drops the old table, and with foreign keys on, `DROP TABLE`
+  fails when other tables' rows reference it, or runs their `ON DELETE`
+  actions (`on_delete: :delete_all` deletes those rows). So turn foreign keys
+  off for the rebuild. `PRAGMA foreign_keys` has no effect inside a
+  transaction and applies to one connection, so run the migration without
+  its DDL transaction and do the rebuild on one checked-out connection, in a
+  transaction of its own:
 
   ```elixir
+  @disable_ddl_transaction true
+
   def up do
     alter table(:books) do
       add :author_id, references(:authors, on_delete: :nilify_all)
@@ -97,18 +107,39 @@ Everything else (`:database`, `:pool_size`, `:default_transaction_mode`,
   end
 
   def down do
-    create table(:books_new) do
-      add :title, :string
-    end
+    repo().checkout(fn ->
+      repo().query!("PRAGMA foreign_keys = OFF")
 
-    execute "INSERT INTO books_new (id, title) SELECT id, title FROM books"
-    drop table(:books)
-    rename table(:books_new), to: table(:books)
+      try do
+        repo().transaction(fn ->
+          create table(:books_new) do
+            add :title, :string
+          end
+
+          execute "INSERT INTO books_new (id, title) SELECT id, title FROM books"
+          drop table(:books)
+          rename table(:books_new), to: table(:books)
+          flush()
+        end)
+      after
+        repo().query!("PRAGMA foreign_keys = ON")
+      end
+    end)
   end
   ```
 
-  Nothing else may reference the table while it is rebuilt (drop and
-  recreate those foreign keys too).
+  The `after` turns foreign keys back on before the connection returns to
+  the pool. Keep the rebuilt table's columns and primary key as they were,
+  so the rows that reference it still match (`PRAGMA foreign_key_check`
+  lists any that don't).
+* Turso keeps its own bookkeeping tables in `sqlite_master`, next to
+  SQLite's `sqlite_*` ones: one `__turso_internal_seq_*` table per
+  `AUTOINCREMENT` table and, in MVCC mode (S3 repos included),
+  `__turso_internal_mvcc_meta`. Code that lists the tables (a backup check,
+  a test that compares schemas or row counts) should skip names starting
+  with `sqlite_` or `__turso_internal_`. Their contents are internal and
+  can differ between a running writer and a restored copy of the same
+  database.
 * Error messages raised by the adapter for unsupported features say "Turso"
   instead of "SQLite3". Constraint errors map to changeset errors exactly as
   before.

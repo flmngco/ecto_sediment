@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Docs
+
+* Migrating guide: the table rebuild that replaces dropping a column with
+  its own `REFERENCES` now runs with foreign keys off on one connection.
+  Run in the migration's transaction, `DROP TABLE` failed when other rows
+  referenced the table, or ran their `ON DELETE` actions (deleting rows with
+  `on_delete: :delete_all`).
+* Turso's `__turso_internal_*` tables in `sqlite_master` are documented.
+
 ## 0.1.0-beta.1 (2026-10-04)
 
 First version: a port of ecto_sqlite3 0.25 to Turso (turso_core 0.8.1) via

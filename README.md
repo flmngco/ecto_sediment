@@ -422,6 +422,9 @@ Every `Ecto.Adapters.SQLite3` option and feature, and its status in
   `F32_BLOB (3)`), so `mix ecto.dump` output can differ in whitespace from
   what the migration generated, and `pragma_table_info` reports declared
   types without their size (`F32_BLOB`).
+* **Internal tables.** `sqlite_master` also lists Turso's
+  `__turso_internal_*` tables (one per `AUTOINCREMENT` table, and one more
+  in MVCC mode); skip them, like `sqlite_*`, when listing tables.
 * **Error messages** raised by the adapter for unsupported features say
   "Turso" instead of "SQLite3", e.g. `"Turso does not support table prefixes"`.
 * **Multi-column unique violations.** Turso reports them as
@@ -479,8 +482,9 @@ Every `Ecto.Adapters.SQLite3` option and feature, and its status in
   * Dropping a column that has its own `REFERENCES` fails with
     `unknown column "parent_id" in foreign key definition`, so `remove`
     of such a column, and rolling back `add :parent_id, references(...)`,
-    fail. Write the migration's `down` as a table rebuild instead; see
-    "Behaviour to check in your application" in the migrating guide.
+    fail. Write the migration's `down` as a table rebuild instead, with
+    foreign keys off on one connection; see "Behaviour to check in your
+    application" in the migrating guide.
 * **Other Turso SQL gaps** affect raw SQL rather than the adapter. In
   turso_core 0.8.1, `INSTEAD OF` triggers (triggers on views) are not
   supported. Recursive CTEs, all window functions including custom frames,
