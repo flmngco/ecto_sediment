@@ -89,6 +89,30 @@ defmodule Ecto.Adapters.SedimentConnTest do
       assert Sediment.storage_down(opts) == :ok
       assert File.ls!(dir) == []
     end
+
+    test "keeps the MVCC log of another database file with the same stem" do
+      dir = Temp.mkdir!()
+      mvcc = [database: Path.join(dir, "app.db"), journal_mode: :mvcc]
+      assert Sediment.storage_up(mvcc) == :ok
+
+      assert {_, 0} =
+               Sediment.dump_cmd(["CREATE TABLE t (id INTEGER PRIMARY KEY)"], [], mvcc)
+
+      log = File.read!(Path.join(dir, "app.db-log"))
+
+      # A WAL database app.sqlite, made elsewhere: its name maps to app.db-log too.
+      elsewhere = Temp.mkdir!()
+      wal = [database: Path.join(elsewhere, "app.sqlite"), journal_mode: :wal]
+      assert Sediment.storage_up(wal) == :ok
+
+      assert {_, 0} =
+               Sediment.dump_cmd(["CREATE TABLE u (id INTEGER PRIMARY KEY)"], [], wal)
+
+      File.cp!(wal[:database], Path.join(dir, "app.sqlite"))
+
+      assert Sediment.storage_down(database: Path.join(dir, "app.sqlite")) == :ok
+      assert File.read!(Path.join(dir, "app.db-log")) == log
+    end
   end
 
   describe ".autogenerate/1" do

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixed
+
+* `storage_down/1` removed the `.db-log` named after the file without its
+  extension even when that log belonged to another database file
+  (`app.sqlite` next to an MVCC `app.db`). It now removes the log only for
+  an MVCC database, whose log Sediment keeps its own.
+
 ### Docs
 
 * Migrating guide: the table rebuild that replaces dropping a column with

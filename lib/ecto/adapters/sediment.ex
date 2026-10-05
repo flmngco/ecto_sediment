@@ -363,18 +363,30 @@ defmodule Ecto.Adapters.Sediment do
   def storage_down(options) do
     db_path = Keyword.fetch!(options, :database)
     warn_s3_kept(options[:s3])
+    mvcc? = mvcc_file?(db_path)
 
     case File.rm(db_path) do
       :ok ->
         File.rm(db_path <> "-shm")
         File.rm(db_path <> "-wal")
         File.rm(db_path <> "-tshm")
-        File.rm(Path.rootname(db_path) <> ".db-log")
+        # The MVCC log is named after the file without its extension, so it
+        # may be another database file's (app.db next to app.sqlite); Sediment
+        # only lets an MVCC database use a log that is its own.
+        if mvcc?, do: File.rm(Path.rootname(db_path) <> ".db-log")
         :ok
 
       _otherwise ->
         {:error, :already_down}
     end
+  end
+
+  # Byte 18 of the header (the read version) is 255 in MVCC mode.
+  defp mvcc_file?(path) do
+    match?(
+      {:ok, <<_::binary-size(18), 255, _::binary>>},
+      File.open(path, [:read, :binary], &IO.binread(&1, 20))
+    )
   end
 
   defp warn_s3_kept(nil), do: :ok

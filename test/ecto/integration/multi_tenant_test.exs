@@ -208,7 +208,7 @@ defmodule Ecto.Integration.MultiTenantTest do
       Supervisor.child_spec(
         {EctoSediment.DynamicRepo,
          repo_config.("wayne")
-         |> Keyword.update!(:database, &(&1 <> "-node-b"))
+         |> Keyword.update!(:database, &(Path.rootname(&1) <> "-node-b.db"))
          |> Keyword.update!(:s3, &Keyword.put(&1, :owner, "node-b"))
          |> Keyword.merge(name: nil, log: false)},
         id: :node_b
