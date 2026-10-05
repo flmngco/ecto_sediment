@@ -197,8 +197,10 @@ defmodule Ecto.Adapters.Sediment do
   file without affecting the writer; see also `mix ecto.sediment.s3.restore`.
 
   `storage_up/1`, `storage_down/1` and `storage_status/1` operate on the local working
-  copy: `storage_down/1` does **not** delete data in S3, and a repo whose local file
-  was removed is restored from S3 on the next start.
+  copy: `storage_down/1` does **not** delete data in S3 (`s3_destroy/2` does), and a
+  repo whose local file was removed is restored from S3 on the next start.
+  `s3_exists?/1` tells whether a location holds a database; `must_exist: true` in the
+  `:s3` options makes a repo refuse to start with a new, empty one.
 
   ### Vectors
 
@@ -394,7 +396,8 @@ defmodule Ecto.Adapters.Sediment do
   defp warn_s3_kept(s3) do
     Logger.warning(
       "storage_down only removes the local working copy; the database in S3 " <>
-        "(bucket #{inspect(s3[:bucket])}, prefix #{inspect(s3[:prefix] || "")}) is kept"
+        "(bucket #{inspect(s3[:bucket])}, prefix #{inspect(s3[:prefix] || "")}) is kept; " <>
+        "Ecto.Adapters.Sediment.s3_destroy/2 deletes it"
     )
   end
 
@@ -695,6 +698,67 @@ defmodule Ecto.Adapters.Sediment do
   def s3_import(s3, path, opts) when is_list(s3) and is_binary(path) do
     s3 = Connection.normalize_opts(s3: s3)[:s3]
     Sediment.S3.import(path, s3, opts)
+  end
+
+  @doc """
+  Whether the S3 location of `repo` holds a database (see
+  `Sediment.S3.exists?/1`): `false` when it holds none yet or the database
+  was destroyed. Only reads S3. Raises `Sediment.Error` when the store
+  can't be read.
+
+  `repo` is a repo module (its `:s3` configuration is used) or a keyword
+  list of `:s3` options, for example of a dynamic repo.
+
+  To refuse to create an empty database at a location that should hold one
+  (a tenant you know exists), set `must_exist: true` in the `:s3` options
+  instead: the repo then fails to connect rather than start empty.
+  """
+  @spec s3_exists?(Ecto.Repo.t() | Keyword.t()) :: boolean()
+  def s3_exists?(repo_or_s3)
+
+  def s3_exists?(repo) when is_atom(repo) do
+    case repo.config()[:s3] do
+      nil -> raise ArgumentError, "#{inspect(repo)} is not configured with :s3"
+      s3 -> s3_exists?(s3)
+    end
+  end
+
+  def s3_exists?(s3) when is_list(s3) do
+    Sediment.S3.exists?(Connection.normalize_opts(s3: s3)[:s3])
+  end
+
+  @doc """
+  Destroys the S3-backed database of `repo` (see `Sediment.S3.destroy/2`):
+  afterwards no open, replica or restore finds it, and its snapshots and log
+  are deleted. The repo's next start creates a new, empty database there.
+
+  Stop the repo everywhere first: destroy returns an error while the
+  database is open in this VM, and `{:error, "s3 lease held by ..."}` while
+  a writer elsewhere holds the lease. Local files are not touched;
+  `storage_down/1` (`mix ecto.drop`) removes the working copy. Two small
+  objects without data stay at the prefix (a marker and `lease.json`).
+
+  `repo` is a repo module (its `:s3` configuration is used) or a keyword
+  list of `:s3` options, for example of a dynamic repo.
+
+  ## Options
+
+    * `:force` - take the lease even while a writer holds it, fencing that
+      writer (its commits not yet uploaded are lost with the database).
+  """
+  @spec s3_destroy(Ecto.Repo.t() | Keyword.t(), Keyword.t()) ::
+          {:ok, map()} | {:error, term()}
+  def s3_destroy(repo_or_s3, opts \\ [])
+
+  def s3_destroy(repo, opts) when is_atom(repo) do
+    case repo.config()[:s3] do
+      nil -> {:error, "#{inspect(repo)} is not configured with :s3"}
+      s3 -> s3_destroy(s3, opts)
+    end
+  end
+
+  def s3_destroy(s3, opts) when is_list(s3) do
+    Sediment.S3.destroy(Connection.normalize_opts(s3: s3)[:s3], opts)
   end
 
   @doc """

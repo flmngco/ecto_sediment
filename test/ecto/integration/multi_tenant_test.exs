@@ -255,19 +255,47 @@ defmodule Ecto.Integration.MultiTenantTest do
     assert bodies("stark") == ["s1", "s2"]
   end
 
-  @tag skip: not can_list?() && "deletes objects with unsigned requests (SeaweedFS)"
-  test "deleting a tenant: stop it, delete its files and its prefix; the id starts empty",
+  test "deleting a tenant: stop it, destroy its S3 database, delete its files; the id starts empty",
        %{dir: dir, repo_config: repo_config} do
     insert!("wonka", "secret")
-    :ok = MyApp.Tenants.stop("wonka")
+    config = repo_config.("wonka")
+    assert Ecto.Adapters.Sediment.s3_exists?(config[:s3])
 
-    prefix = repo_config.("wonka")[:s3][:prefix]
-    keys = list_objects(prefix)
-    assert keys != []
-    for key <- keys, do: :ok = delete_object(key)
+    # refused while the tenant is open (here, or on another node: "s3 lease held")
+    assert {:error, message} = Ecto.Adapters.Sediment.s3_destroy(config[:s3])
+    assert message =~ "is open in this VM"
+
+    :ok = MyApp.Tenants.stop("wonka")
+    assert {:ok, %{objects: objects}} = Ecto.Adapters.Sediment.s3_destroy(config[:s3])
+    assert objects > 0
+    refute Ecto.Adapters.Sediment.s3_exists?(config[:s3])
     for file <- Path.wildcard(Path.join(dir, "wonka.db*")), do: File.rm!(file)
 
     assert bodies("wonka") == []
+  end
+
+  test "must_exist: a tenant without a database at its prefix doesn't start empty",
+       %{repo_config: repo_config} do
+    config = repo_config.("nobody")
+    refute Ecto.Adapters.Sediment.s3_exists?(config[:s3])
+
+    start_supervised!(
+      {EctoSediment.DynamicRepo,
+       config
+       |> Keyword.update!(:s3, &Keyword.put(&1, :must_exist, true))
+       |> Keyword.merge(name: nil, log: false)}
+    )
+    |> EctoSediment.DynamicRepo.put_dynamic_repo()
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        assert_raise DBConnection.ConnectionError, fn ->
+          EctoSediment.DynamicRepo.query!("SELECT 1", [], timeout: 1_000)
+        end
+      end)
+
+    assert log =~ "must_exist: true"
+    refute Ecto.Adapters.Sediment.s3_exists?(config[:s3])
   end
 
   @tag skip: not can_list?() && "copies objects with unsigned requests (SeaweedFS)"

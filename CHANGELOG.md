@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### S3
+
+* `s3_destroy/2` deletes a repo's S3 database (`Sediment.S3.destroy/2`),
+  and `s3_exists?/1` tells whether a location holds one; both take a repo
+  module or its `:s3` options. `must_exist: true` in the `:s3` options makes
+  a repo refuse to start with a new, empty database. The multi-tenant guide
+  uses them for deleting tenants and for tenants that must exist.
+
 ### Fixed
 
 * `storage_down/1` removed the `.db-log` named after the file without its

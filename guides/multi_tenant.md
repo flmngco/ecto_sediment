@@ -403,19 +403,33 @@ instead of waiting for it to expire.
     encryption: config[:encryption]
   )
   ```
-* **Deleting a tenant.** Stop the tenant everywhere (no writer and no replica
-  may be open on its prefix), then delete its local files and every object
-  under its S3 prefix, `lease.json` and `manifest.json` included.
-  `storage_down/1` (`mix ecto.drop`) only removes the local working copy and
-  keeps the data in S3; delete the prefix with your S3 tooling (for example
-  `aws s3 rm --recursive s3://my-bucket/tenants/<id>/`, or a lifecycle rule).
-  A writer still running would keep renewing its lease and be fenced at its
-  next commit. With per-tenant keys, deleting the key too makes any copy left
-  behind unreadable.
+* **Deleting a tenant.** Stop the tenant everywhere, then destroy its S3
+  database and delete its local files:
+
+  ```elixir
+  :ok = MyApp.Tenants.stop(tenant_id)
+  config = MyApp.TenantConfig.repo(tenant_id)
+  {:ok, _} = Ecto.Adapters.Sediment.s3_destroy(config[:s3])
+  for file <- Path.wildcard(config[:database] <> "*"), do: File.rm!(file)
+  ```
+
+  `s3_destroy/2` refuses while the tenant is open on this node or another
+  node holds its lease (`force: true` fences that writer instead). It
+  deletes the snapshots and log; two small objects without data stay at the
+  prefix (a marker and `lease.json`), so a delayed write of the old database
+  can never come back under the same id. `storage_down/1` (`mix ecto.drop`)
+  only removes the local working copy. With per-tenant keys, deleting the
+  key too makes any copy left behind (a restored file, a backup) unreadable.
+* **Tenants that must exist.** Opening a prefix without a database creates a
+  new, empty one, which is what a new tenant needs, but a mistyped bucket or
+  prefix would then hand out empty databases for existing tenants. For
+  tenants you know exist, add `must_exist: true` to their `:s3` options: the
+  repo then fails to start instead. `Ecto.Adapters.Sediment.s3_exists?/1`
+  answers the question without opening the database.
 * **Moving a tenant** to another bucket or prefix: stop it, restore it into a
   file with `s3_restore/3`, and import that file into the new, empty prefix
   with `s3_import/3`. Then point the tenant's configuration at the new
-  prefix and delete the old one. This writes a fresh database: the old
+  prefix and destroy the old one with `s3_destroy/2`. This writes a fresh database: the old
   prefix's retained epochs (point-in-time history) don't come along. Copying
   all objects of the prefix with S3 tools, while nothing is open on it,
   keeps the history: the layout is relative to the prefix.

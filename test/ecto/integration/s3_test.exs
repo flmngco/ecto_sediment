@@ -330,6 +330,31 @@ defmodule Ecto.Integration.S3Test do
     assert log =~ config[:s3][:prefix]
   end
 
+  test "s3_exists?/1 and s3_destroy/2 take the repo's :s3 configuration", %{
+    config: config
+  } do
+    Application.put_env(:ecto_sediment, Repo, config)
+    on_exit(fn -> Application.delete_env(:ecto_sediment, Repo) end)
+    refute Sediment.s3_exists?(Repo)
+
+    pid = Repo.start_supervised!(config)
+    Repo.query!("CREATE TABLE gone (v TEXT)")
+    Repo.query!("INSERT INTO gone VALUES ('x')", [], sync: true)
+    assert Sediment.s3_exists?(Repo)
+    assert {:error, _} = Sediment.s3_destroy(Repo)
+    Supervisor.stop(pid)
+
+    assert {:ok, %{objects: objects}} = Sediment.s3_destroy(Repo)
+    assert objects > 0
+    refute Sediment.s3_exists?(Repo)
+    assert :ok = Sediment.storage_down(config)
+
+    Repo.start_supervised!(config)
+
+    assert %{rows: []} =
+             Repo.query!("SELECT name FROM sqlite_master WHERE name = 'gone'")
+  end
+
   test "credentials never show up in logs or errors", %{config: config, dir: dir} do
     secret = "SECRET-#{System.unique_integer([:positive])}"
 
