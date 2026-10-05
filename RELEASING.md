@@ -1,13 +1,13 @@
 # Releasing ecto_sediment
 
 Releases are published to Hex only by `.github/workflows/release.yml`, when a
-GitHub release is published.
+GitHub release is published. Nobody publishes from a laptop.
 
 ## Packaging
 
 During development ecto_sediment depends on Sediment by path, which a Hex
 package can't. With `SEDIMENT_HEX=1` it depends on `{:sediment, "~> 0.1.0-beta.1"}`
-from Hex instead (see `sediment_dep/0` in `mix.exs`); the release workflow
+from Hex instead (see `sediment_deps/0` in `mix.exs`); the release workflow
 sets it. Without it `mix hex.build` stops with missing metadata rather than
 producing a package without its driver. To check a package locally:
 
@@ -17,7 +17,7 @@ SEDIMENT_HEX=1 mix hex.build --unpack
 
 The required Sediment version must be on Hex first: release Sediment before
 an ecto_sediment version that needs it, and raise the constraint in
-`sediment_dep/0` when ecto_sediment starts using a newer Sediment.
+`sediment_deps/0` when ecto_sediment starts using a newer Sediment.
 
 ## Release steps
 
@@ -31,15 +31,24 @@ an ecto_sediment version that needs it, and raise the constraint in
 3. Create a GitHub release on that commit of `main` with the tag
    `v<version>` (e.g. `v0.1.0`) and the CHANGELOG entry as its notes, and
    publish it.
-4. The `Release` workflow waits for approval in the `hex` environment.
-   Approve it: it checks that the tag matches `@version`, that CHANGELOG.md
-   has a released entry for it, that the commit is on `main` and that the
-   Sediment constraint resolves on Hex; runs `mix ci` on a clean build (no
-   caches) against Sediment from Hex; and runs `mix hex.publish --yes`.
+4. The `Release` workflow:
+   1. checks that the tag matches `@version`, that CHANGELOG.md has a dated
+      entry for it and that the commit is on `main`;
+   2. checks that the Sediment constraint resolves on Hex and runs `mix ci`
+      from a clean build (no caches) against Sediment from Hex, with
+      SeaweedFS for the S3 suites. This job has no secrets;
+   3. builds the Hex package and its docs with `SEDIMENT_HEX=1`. This job
+      has no secrets either;
+   4. waits for approval of the `hex` environment. Approve it only for a
+      release you just published yourself, after checking that the run's
+      commit is the `main` commit you tagged. The job then uploads the
+      finished package and docs through the Hex API. It is the only job
+      that sees `HEX_API_KEY`, and it checks nothing out and runs no code
+      from the repository or its dependencies.
 5. Check the package and its docs on hex.pm and hexdocs.pm.
 
-If a step fails, fix it on `main`, delete the release and the tag, and start
-again from step 3. A published Hex version can be retired
+If a step fails, nothing is published: fix it on `main`, delete the release
+and the tag, and start again from step 3. A published Hex version can be retired
 (`mix hex.retire`) but not replaced after the first hour.
 
 ## Hex API key
@@ -63,6 +72,12 @@ the `hex` environment (never at the repository or organization level).
       self-review" off only if there is a single maintainer, deployment
       branches and tags restricted to the tag rule `v*`, no admin bypass;
       secret `HEX_API_KEY`.
+- [ ] A tag ruleset on `refs/tags/v*`: only the maintainer can create
+      matching tags; updates and deletions are blocked; no bypass list. The
+      `hex` environment admits any `v*` tag, and a release runs the
+      workflow files of its tag, so without this rule anyone with write
+      access could tag a commit with a modified `release.yml`.
+- [ ] No repository- or organization-level secret holds a Hex key.
 - [ ] Branch protection on `main`: pull requests required, the CI checks
       required, no force pushes, no deletions.
 - [ ] Actions: "Require approval for all outside collaborators" for fork
