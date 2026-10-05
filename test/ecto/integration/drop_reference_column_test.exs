@@ -100,23 +100,22 @@ defmodule Ecto.Integration.DropReferenceColumnTest do
   defp foreign_keys_per_connection do
     parent = self()
     repo = Repo.get_dynamic_repo()
-
-    tasks =
-      for _ <- 1..3 do
-        Task.async(fn ->
-          Repo.put_dynamic_repo(repo)
-
-          Repo.checkout(fn ->
-            send(parent, :checked_out)
-            receive do: (:go -> :ok)
-            Repo.query!("PRAGMA foreign_keys").rows
-          end)
-        end)
-      end
+    tasks = for _ <- 1..3, do: Task.async(fn -> foreign_keys_held(repo, parent) end)
 
     for _ <- tasks, do: assert_receive(:checked_out)
     for task <- tasks, do: send(task.pid, :go)
     Enum.map(tasks, &Task.await/1)
+  end
+
+  # holds a connection until told to read its foreign_keys setting
+  defp foreign_keys_held(repo, parent) do
+    Repo.put_dynamic_repo(repo)
+
+    Repo.checkout(fn ->
+      send(parent, :checked_out)
+      receive do: (:go -> :ok)
+      Repo.query!("PRAGMA foreign_keys").rows
+    end)
   end
 
   defp columns do
