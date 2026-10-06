@@ -539,12 +539,26 @@ defmodule Ecto.Adapters.Sediment do
   def s3_info(repo), do: Sediment.S3.info(pool(repo))
 
   @doc """
+  Checkpoints the S3-backed database of `repo` and uploads a snapshot now,
+  starting a new log epoch, instead of waiting for the next automatic
+  checkpoint (see `Sediment.S3.snapshot/1`). Returns once the snapshot is
+  uploaded. With `retain_epochs` the epoch it ends stays available for
+  point-in-time restore.
+
+  Unlike `checkpoint/2`, which also checkpoints databases without S3, it
+  returns `{:error, "not an s3 database"}` for those. `repo` is a repo
+  module or a repo pid (a dynamic repo).
+  """
+  @spec s3_snapshot(Ecto.Repo.t() | pid()) :: :ok | {:error, term()}
+  def s3_snapshot(repo), do: Sediment.S3.snapshot(pool(repo))
+
+  @doc """
   Waits until everything committed so far through `repo` is durable in S3,
   at most `timeout` milliseconds.
 
   With `durability: :async` (the default for S3-backed repos) a commit
   returns once it is in the local log, and a background uploader makes it
-  durable in S3 shortly after (within `:max_lag_ms`). Call `s3_flush/2`
+  durable in S3 shortly after. Call `s3_flush/2`
   before an operation that must not lose recent commits, such as handing
   over to another node. Returns `:ok`, or `{:error, reason}` when the timeout
   expires or the writer is fenced (the reason says up to which log offset the

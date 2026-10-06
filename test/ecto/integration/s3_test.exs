@@ -88,6 +88,28 @@ defmodule Ecto.Integration.S3Test do
     assert snapshot(pid) != before
   end
 
+  test "s3_snapshot/1 starts a new epoch; a repo without S3 gets an error",
+       %{config: config, dir: dir} do
+    pid = Repo.start_supervised!(config)
+    Repo.query!("CREATE TABLE t (id INTEGER PRIMARY KEY)")
+
+    epoch = fn ->
+      {:ok, info} = Sediment.s3_info(pid)
+      info.epoch
+    end
+
+    first = epoch.()
+    assert Sediment.s3_snapshot(pid) == :ok
+    second = epoch.()
+    assert second != first
+    # the repo module (its current dynamic repo) too
+    assert Sediment.s3_snapshot(Repo) == :ok
+    assert epoch.() not in [first, second]
+
+    Repo.start_supervised!(database: Path.join(dir, "local.db"), pool_size: 1)
+    assert Sediment.s3_snapshot(Repo) == {:error, "not an s3 database"}
+  end
+
   # An open transaction on another connection: checkpoint/2 waits for it,
   # automatic checkpoints are postponed until it ends (writes don't wait)
   test "checkpoints and open transactions", %{config: config} do

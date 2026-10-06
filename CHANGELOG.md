@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### S3
+
+* `s3_snapshot/1` checkpoints an S3-backed repo and uploads a snapshot now
+  (`Sediment.S3.snapshot/1`); it takes a repo module or a repo pid.
+
 ## 0.1.0-beta.2 (2026-10-05)
 
 ### S3
