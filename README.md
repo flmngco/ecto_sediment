@@ -270,7 +270,7 @@ config :my_app, MyApp.Repo,
   commit, `Ecto.Adapters.Sediment.s3_flush/2` for everything so far, and
   `durability: :sync` makes every commit wait. See the S3 guide's
   "Durability" section.
-* The journal mode defaults to `:mvcc` (required for S3) and `busy_timeout` to 15 s (with `durability: :sync`, commits hold the write lock while they upload).
+* The journal mode defaults to `:mvcc` (required for S3) and `busy_timeout` to 15 s (with `durability: :sync`, commits hold the write lock while they upload). `queue_interval` defaults to 15 s, so queries made while a connection restores the database wait for it (until their `:timeout`) instead of being dropped from the pool's queue after about 4 s.
 * One writer at a time, enforced with a lease in the bucket. See
   `Sediment.S3` for lease, checkpoint and snapshot options.
 * `mix ecto.create` / `storage_up/1` restores an existing database from S3 or

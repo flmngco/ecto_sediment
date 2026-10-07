@@ -293,6 +293,51 @@ defmodule Ecto.Integration.S3Test do
     assert time.(fn -> Repo.query!("INSERT INTO t VALUES ('fast')") end) < slow - 150
   end
 
+  # A cold open restores inside connect; until then the pool has no
+  # connection, and DBConnection's default queue_interval (2 s) would drop
+  # the first queries after about 4 s.
+  test "queries made while a slow open restores wait for it", %{
+    config: config,
+    dir: dir
+  } do
+    pid = Repo.start_supervised!(config)
+    Repo.query!("CREATE TABLE t (v TEXT)")
+    Repo.query!("INSERT INTO t VALUES ('restored')", [], sync: true)
+    Supervisor.stop(pid)
+
+    %URI{host: host, port: port} = URI.parse(endpoint())
+
+    proxy =
+      start_supervised!(
+        {EctoSediment.LatencyProxy, upstream: {String.to_charlist(host), port}}
+      )
+
+    EctoSediment.LatencyProxy.set_delay(proxy, 600)
+
+    s3 =
+      Keyword.put(
+        config[:s3],
+        :endpoint,
+        "http://127.0.0.1:#{EctoSediment.LatencyProxy.port(proxy)}"
+      )
+
+    {time, result} =
+      :timer.tc(fn ->
+        Repo.start_supervised!(
+          Keyword.merge(config,
+            s3: s3,
+            pool_size: 1,
+            database: Path.join(dir, "cold.db")
+          )
+        )
+
+        Repo.query!("SELECT v FROM t", [], timeout: 60_000)
+      end)
+
+    assert div(time, 1000) > 5_000
+    assert %{rows: [["restored"]]} = result
+  end
+
   test "a query timeout cancels a commit waiting for S3 (durability: :sync)", %{
     config: config
   } do

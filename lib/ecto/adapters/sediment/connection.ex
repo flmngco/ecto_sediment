@@ -42,13 +42,24 @@ defmodule Ecto.Adapters.Sediment.Connection do
     |> Keyword.put_new(:cache_size, -64_000)
     |> Keyword.put_new(:temp_store, :memory)
     |> Keyword.put_new(:pool_size, 5)
-    |> put_s3_busy_timeout()
+    |> put_s3_defaults()
   end
 
   # With S3, a commit holds the write lock while it uploads, so writers can
-  # wait much longer than on a local disk.
-  defp put_s3_busy_timeout(opts) do
-    if opts[:s3], do: Keyword.put_new(opts, :busy_timeout, 15_000), else: opts
+  # wait much longer than on a local disk. A connection restores the database
+  # from S3 when it connects, which can take seconds, and until then the pool
+  # has no connection: DBConnection would drop queued requests once the queue
+  # made no progress for about twice :queue_interval (2 s by default), so the
+  # first queries after a start failed. Queued requests still end at their
+  # own :timeout.
+  defp put_s3_defaults(opts) do
+    if opts[:s3] do
+      opts
+      |> Keyword.put_new(:busy_timeout, 15_000)
+      |> Keyword.put_new(:queue_interval, 15_000)
+    else
+      opts
+    end
   end
 
   # S3 durability only works in MVCC mode

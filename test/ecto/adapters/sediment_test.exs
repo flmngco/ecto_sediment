@@ -115,6 +115,26 @@ defmodule Ecto.Adapters.SedimentConnTest do
     end
   end
 
+  describe "pool options" do
+    defp pool_opts(opts) do
+      %{start: {_, _, [{Elixir.Sediment.Connection, pool_opts}]}} =
+        Sediment.Connection.child_spec(opts)
+
+      pool_opts
+    end
+
+    test "S3 repos queue requests while a connection restores" do
+      assert pool_opts(database: "a.db", s3: [bucket: "b"])[:queue_interval] == 15_000
+
+      assert pool_opts(database: "a.db", s3: [bucket: "b"], queue_interval: 500)[
+               :queue_interval
+             ] ==
+               500
+
+      refute Keyword.has_key?(pool_opts(database: "a.db"), :queue_interval)
+    end
+  end
+
   describe ".autogenerate/1" do
     test ":id must be generated from storage" do
       assert Sediment.autogenerate(:id) == nil

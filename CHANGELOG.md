@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### S3
+
+* S3 repos default to `queue_interval: 15_000`. A connection restores the
+  database while it connects, and with DBConnection's 2 s default the
+  queries made meanwhile (migrations right after a start) were dropped from
+  the pool's queue after about 4 s. They now wait until their `:timeout`.
+
 ## 0.1.0-beta.3 (2026-10-07)
 
 * Requires sediment 0.1.0-beta.4, which fixes lost query cancels (a pool
