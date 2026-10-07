@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.1.0-beta.3 (2026-10-07)
+
+* Requires sediment 0.1.0-beta.4, which fixes lost query cancels (a pool
+  connection could stay stuck after a client timeout under load).
 
 ### S3
 
