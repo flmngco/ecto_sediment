@@ -1,7 +1,7 @@
 defmodule EctoSediment.MixProject do
   use Mix.Project
 
-  @version "0.1.0-beta.3"
+  @version "0.1.0-beta.4"
   @source_url "https://github.com/flmngco/ecto_sediment"
 
   def project do
@@ -82,7 +82,7 @@ defmodule EctoSediment.MixProject do
     path = System.get_env("SEDIMENT_PATH")
 
     if System.get_env("SEDIMENT_HEX") || (is_nil(path) && not sediment_checkout?()) do
-      [{:sediment, "~> 0.1.0-beta.4"}]
+      [{:sediment, "~> 0.1.0-beta.5"}]
     else
       [{:sediment, path: path || "../sediment"}]
     end

@@ -6,7 +6,7 @@ GitHub release is published. Nobody publishes from a laptop.
 ## Packaging
 
 During development ecto_sediment depends on Sediment by path, which a Hex
-package can't. With `SEDIMENT_HEX=1` it depends on `{:sediment, "~> 0.1.0-beta.4"}`
+package can't. With `SEDIMENT_HEX=1` it depends on `{:sediment, "~> 0.1.0-beta.5"}`
 from Hex instead (see `sediment_deps/0` in `mix.exs`); the release workflow
 sets it. Without it `mix hex.build` stops with missing metadata rather than
 producing a package without its driver. To check a package locally:

@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.1.0-beta.4 (2026-10-08)
+
+* Requires sediment 0.1.0-beta.5: warm reopen of S3 databases, and a fix
+  for a rare empty reopen after a pool stop.
 
 ### S3
 
