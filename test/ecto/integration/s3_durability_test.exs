@@ -295,12 +295,20 @@ defmodule Ecto.Integration.S3DurabilityTest do
       LatencyProxy.set_down(proxy, false)
       Supervisor.stop(b)
 
-      # A finds it was fenced, reconnects and restores what is durable
+      # A finds it was fenced, reconnects and restores what is durable, and
+      # reports the loss. The fenced storage reports the loss as soon as it
+      # noticed the fence, while connections may still hold it: each fails
+      # one statement and reconnects (none restores while another holds it).
+      # Once the loss shows, a statement working on every connection means
+      # all of them restored.
       Repo.put_dynamic_repo(a)
+
       # (a statement, as any request would run, makes it notice the fence)
       assert wait_until(fn ->
                _ = Repo.query("SELECT 1")
-               match?({:ok, %{lost: %{}}}, Sediment.s3_info(a))
+
+               match?({:ok, %{lost: %{}}}, Sediment.s3_info(a)) and
+                 all_connections_work?(a, config[:pool_size])
              end)
     end)
 
@@ -317,6 +325,30 @@ defmodule Ecto.Integration.S3DurabilityTest do
     assert Sediment.s3_flush(a, 5_000) == :ok
     Repo.insert!(%Post{title: "synced again"}, sync: true)
     assert is_map(lost)
+  end
+
+  # Holds every connection of the pool at once and runs a statement on each
+  defp all_connections_work?(pool, pool_size) do
+    parent = self()
+
+    tasks =
+      for _ <- 1..pool_size do
+        Task.async(fn -> statement_on_held_connection(pool, parent) end)
+      end
+
+    for _ <- tasks, do: assert_receive(:checked_out, 30_000)
+    for task <- tasks, do: send(task.pid, :go)
+    Enum.all?(tasks, &(Task.await(&1, 30_000) == :ok))
+  end
+
+  defp statement_on_held_connection(pool, parent) do
+    Repo.put_dynamic_repo(pool)
+
+    Repo.checkout(fn ->
+      send(parent, :checked_out)
+      receive do: (:go -> :ok)
+      if match?({:ok, _}, Repo.query("SELECT 1")), do: :ok, else: :error
+    end)
   end
 
   defp wait_until(fun, attempts \\ 300) do
