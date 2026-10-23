@@ -112,6 +112,61 @@ defmodule Ecto.Adapters.SedimentKeysTest do
     end
   end
 
+  # Wrong shapes, each holding `key`.
+  defp shapes(key) do
+    ring = [keys: [{"r1", key}], cipher: "aegis256"]
+
+    [
+      key,
+      String.to_atom(key),
+      %{encryption: ring},
+      ring,
+      [encryption: ring],
+      [encryption: [keys: [{"r1", [key: key]}]]],
+      [{key, "r1"}],
+      {:global, ring},
+      %{bucket: "b", encryption: key},
+      [bucket: "b", encryption: key],
+      [s3: [ring]]
+    ]
+  end
+
+  # The callbacks taking the repo's configuration, besides the documented
+  # functions.
+  @callbacks [
+    storage_up: 1,
+    storage_down: 1,
+    storage_status: 1,
+    structure_dump: 2,
+    structure_load: 2
+  ]
+
+  test "no documented function or configuration callback shows a key, in any shape" do
+    {:docs_v1, _, _, _, _, _, docs} = Code.fetch_docs(Adapter)
+
+    documented =
+      for {{:function, name, arity}, _, _, doc, _} <- docs,
+          doc != :hidden,
+          do: {name, arity}
+
+    assert {:dump_cmd, 3} in documented
+    assert {:s3_refresh, 1} in documented
+
+    for {name, arity} <- documented ++ @callbacks,
+        key <- [@k1, String.duplicate("6e", 16)],
+        position <- 0..(arity - 1),
+        shape <- shapes(key),
+        fill <- [nil, shape] do
+      args = fill |> List.duplicate(arity) |> List.replace_at(position, shape)
+      {_outcome, texts} = shown(fn -> apply(Adapter, name, args) end)
+
+      for text <- texts, i <- 0..(byte_size(key) - 16) do
+        refute text =~ binary_part(key, i, 16),
+               "#{name}/#{arity}, argument #{position + 1}"
+      end
+    end
+  end
+
   describe "the Mix tasks" do
     setup do
       on_exit(fn -> Application.delete_env(:ecto_sediment, DynamicRepo) end)

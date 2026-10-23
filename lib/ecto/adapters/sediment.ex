@@ -357,6 +357,31 @@ defmodule Ecto.Adapters.Sediment do
   @behaviour Ecto.Adapter.Storage
   @behaviour Ecto.Adapter.Structure
 
+  # Every function taking the repo's configuration (its keys) or a caller's
+  # options runs in sediment's key-scrubbing boundary
+  # (Sediment.S3.Keys.Sealed): the documented ones, the storage and the
+  # structure callbacks.
+  use Sediment.S3.Keys.Sealed,
+    only: [
+      checkpoint: 2,
+      dump_cmd: 3,
+      export_sqlite: 3,
+      s3_acknowledge_loss: 1,
+      s3_destroy: 2,
+      s3_exists?: 1,
+      s3_flush: 2,
+      s3_import: 3,
+      s3_info: 1,
+      s3_refresh: 1,
+      s3_restore: 3,
+      s3_snapshot: 1,
+      storage_down: 1,
+      storage_status: 1,
+      storage_up: 1,
+      structure_dump: 2,
+      structure_load: 2
+    ]
+
   require Logger
 
   alias Ecto.Adapters.Sediment.Codec
@@ -664,7 +689,7 @@ defmodule Ecto.Adapters.Sediment do
 
     case config[:s3] do
       nil ->
-        {:error, "#{inspect(repo)} is not configured with :s3"}
+        {:error, "#{Keys.shown_value(repo)} is not configured with :s3"}
 
       s3 ->
         # `encryption: false` (an unencrypted S3 database) is forwarded too
@@ -735,7 +760,7 @@ defmodule Ecto.Adapters.Sediment do
 
     case config[:s3] do
       nil ->
-        {:error, "#{inspect(repo)} is not configured with :s3"}
+        {:error, "#{Keys.shown_value(repo)} is not configured with :s3"}
 
       s3 ->
         opts =
@@ -790,7 +815,7 @@ defmodule Ecto.Adapters.Sediment do
 
   defp exists?(repo) when is_atom(repo) do
     case repo.config()[:s3] do
-      nil -> raise ArgumentError, "#{inspect(repo)} is not configured with :s3"
+      nil -> raise ArgumentError, "#{Keys.shown_value(repo)} is not configured with :s3"
       s3 -> exists?(s3)
     end
   end
@@ -827,7 +852,7 @@ defmodule Ecto.Adapters.Sediment do
 
   defp destroy(repo, opts) when is_atom(repo) do
     case repo.config()[:s3] do
-      nil -> {:error, "#{inspect(repo)} is not configured with :s3"}
+      nil -> {:error, "#{Keys.shown_value(repo)} is not configured with :s3"}
       s3 -> destroy(s3, opts)
     end
   end

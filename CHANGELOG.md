@@ -9,15 +9,18 @@
   task unchanged. Rotating keys is `Sediment.S3.rekey/3` with the repo
   stopped; see "Rotating keys" in sediment's S3 guide.
 * No key shows in an error from a repo configuration or options of the
-  wrong shape: `s3_restore`, `s3_import`, `s3_exists?`, `s3_destroy`,
-  `export_sqlite` (and their Mix tasks), the storage callbacks and the
-  pool's start handle them inside sediment's boundary (see its
-  CHANGELOG). Their options must be a keyword list; `repo_or_s3` of
+  wrong shape: every documented function of the adapter (`s3_*`,
+  `export_sqlite`, `checkpoint`, `dump_cmd`, and so their Mix tasks), the
+  storage and structure callbacks (`structure_dump`, `structure_load`) and
+  the pool's start run inside sediment's boundary, with its net on every
+  error (see its CHANGELOG). Their options must be a keyword list; `repo_or_s3` of
   another type is refused with a fixed message instead of a
   `FunctionClauseError`. `storage_down/1` and `storage_status/1` without a
   `:database` raise a fixed message instead of a `KeyError` (which showed
   the whole configuration). `s3_restore` returns an error instead of
   raising when it can't create the target's directory.
+* The S3 guide says how to import a file restored from before a key
+  rotation (`source_encryption:` with that epoch's key).
 
 ## 0.1.0-beta.4 (2026-10-08)
 
