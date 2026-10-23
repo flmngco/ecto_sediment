@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+* Requires sediment with key rotation (manifest version 4; see its
+  CHANGELOG, a breaking change for S3 prefixes written by older versions).
+  The repo's `:encryption` may be a key ring (`keys:`, `key_for:`), passed
+  through to every connection, to `s3_restore`, `s3_import` and the export
+  task unchanged. Rotating keys is `Sediment.S3.rekey/3` with the repo
+  stopped; see "Rotating keys" in sediment's S3 guide.
+
 ## 0.1.0-beta.4 (2026-10-08)
 
 * Requires sediment 0.1.0-beta.5: warm reopen of S3 databases, and a fix

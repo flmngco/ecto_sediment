@@ -45,7 +45,9 @@ defmodule Ecto.Adapters.Sediment do
       Default is `2000`.
     * `:pool_size` - the size of the connection pool. Defaults to `5`.
     * `:encryption` - `[cipher: "aegis256", key: "<hex key>"]` to open an encrypted
-      database. S3-backed databases require it: pass a key, or `false` for an
+      database, or a key ring (`[keys: [{"r2", key2}, {"r1", key1}]]`, or
+      `[key_for: fun, active: "r2"]`; see "Encryption" in `Sediment.S3`).
+      S3-backed databases require it: pass a key or a ring, or `false` for an
       unencrypted S3 database. See [encryption](#module-encryption).
     * `:s3` - makes an S3 bucket the durable store of the database. See
       [S3-backed databases](#module-s3-backed-databases).

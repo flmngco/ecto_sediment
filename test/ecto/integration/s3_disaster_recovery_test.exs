@@ -306,11 +306,12 @@ defmodule Ecto.Integration.S3DisasterRecoveryTest do
     pid = Repo.start_supervised!(node)
     S3App.migrate(Repo, pid)
 
-    # Durable before after_a (a restore at a time sees what was durable then)
+    # Durable before after_a (a restore at a time sees what was durable then).
+    # Epoch boundaries and commits are dated by the store, to the second.
     for i <- 1..3, do: Repo.insert!(%Post{title: "a-#{i}"}, sync: true)
-    Process.sleep(20)
+    Process.sleep(1_100)
     after_a = DateTime.utc_now()
-    Process.sleep(20)
+    Process.sleep(1_100)
     assert Sediment.checkpoint(pid) == :ok
 
     for i <- 1..3, do: Repo.insert!(%Post{title: "b-#{i}"})
@@ -546,8 +547,8 @@ defmodule Ecto.Integration.S3DisasterRecoveryTest do
       # that it is corrupt
       expected =
         if name == :wrong,
-          do: ~r/can't be read with the given encryption options/,
-          else: ~r/is encrypted|can't be read with the given encryption options/
+          do: ~r/is not the key that encrypted this database/,
+          else: ~r/is encrypted/
 
       assert log =~ expected, "#{name}: #{log}"
       refute log =~ "corrupt", "#{name}: #{log}"
