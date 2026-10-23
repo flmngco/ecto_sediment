@@ -66,8 +66,9 @@ defmodule Ecto.Adapters.Sediment.Connection do
   defp default_journal_mode(opts), do: if(opts[:s3], do: :mvcc, else: :wal)
 
   def start_link(opts) do
-    opts = default_opts(opts)
-    DBConnection.start_link(Sediment.Connection, opts)
+    # Sediment.start_link/1: the pool keeps the :encryption keys hidden
+    # (crash reports, :sys.get_status), as with child_spec/1
+    opts |> default_opts() |> Sediment.start_link()
   end
 
   @impl true
