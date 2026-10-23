@@ -362,10 +362,16 @@ defmodule Ecto.Adapters.Sediment do
   alias Ecto.Adapters.Sediment.Codec
   alias Ecto.Adapters.Sediment.Connection
   alias Ecto.Adapters.Sediment.Structure
+  alias Sediment.S3.Keys
 
   @impl Ecto.Adapter.Storage
   def storage_down(options) do
-    db_path = Keyword.fetch!(options, :database)
+    # The repo's configuration holds its keys: see Sediment.S3.Keys.scrubbed/1.
+    Keys.scrubbed(fn -> do_storage_down(options) end)
+  end
+
+  defp do_storage_down(options) do
+    db_path = database!(options, "storage_down/1")
     warn_s3_kept(options[:s3])
     mvcc? = mvcc_file?(db_path)
 
@@ -405,17 +411,32 @@ defmodule Ecto.Adapters.Sediment do
 
   @impl Ecto.Adapter.Storage
   def storage_status(options) do
-    db_path = Keyword.fetch!(options, :database)
+    Keys.scrubbed(fn ->
+      if File.exists?(database!(options, "storage_status/1")), do: :up, else: :down
+    end)
+  end
 
-    if File.exists?(db_path) do
-      :up
-    else
-      :down
+  # Keyword.fetch!/2's KeyError would show the whole configuration, keys
+  # included.
+  defp database!(options, call) do
+    Keys.options!(options, "Ecto.Adapters.Sediment.#{call}")
+
+    case Keyword.get(options, :database) do
+      nil ->
+        raise ArgumentError, "Ecto.Adapters.Sediment.#{call}: the repo has no :database"
+
+      database ->
+        database
     end
   end
 
   @impl Ecto.Adapter.Storage
   def storage_up(options) do
+    Keys.scrubbed(fn -> do_storage_up(options) end)
+  end
+
+  defp do_storage_up(options) do
+    options = Keys.options!(options, "Ecto.Adapters.Sediment.storage_up/1")
     database = Keyword.get(options, :database)
     pool_size = Keyword.get(options, :pool_size)
 
@@ -629,9 +650,16 @@ defmodule Ecto.Adapters.Sediment do
   """
   @spec s3_restore(Ecto.Repo.t() | Keyword.t(), Path.t(), Keyword.t()) ::
           {:ok, map()} | {:error, term()}
-  def s3_restore(repo_or_s3, path, opts \\ [])
+  def s3_restore(repo_or_s3, path, opts \\ []) do
+    # The repo's configuration and the options hold keys: see
+    # Sediment.S3.Keys.scrubbed/1.
+    Keys.scrubbed(fn ->
+      opts = Keys.options!(opts, "Ecto.Adapters.Sediment.s3_restore/3")
+      restore(repo_or_s3, path, opts)
+    end)
+  end
 
-  def s3_restore(repo, path, opts) when is_atom(repo) do
+  defp restore(repo, path, opts) when is_atom(repo) do
     config = repo.config()
 
     case config[:s3] do
@@ -645,15 +673,28 @@ defmodule Ecto.Adapters.Sediment do
             do: Keyword.put_new(opts, :encryption, config[:encryption]),
             else: opts
 
-        s3_restore(s3, path, opts)
+        restore(s3, path, opts)
     end
   end
 
-  def s3_restore(s3, path, opts) when is_list(s3) do
-    File.mkdir_p!(Path.dirname(path))
-    s3 = Connection.normalize_opts(s3: s3)[:s3]
-    Sediment.S3.restore(path, s3, opts)
+  defp restore(s3, path, opts) when is_list(s3) do
+    directory = Path.dirname(path)
+
+    case File.mkdir_p(directory) do
+      :ok ->
+        Sediment.S3.restore(path, Connection.normalize_opts(s3: s3)[:s3], opts)
+
+      {:error, reason} ->
+        {:error, "cannot create #{directory}: #{:file.format_error(reason)}"}
+    end
   end
+
+  defp restore(_other, _path, _opts),
+    do: raise(ArgumentError, not_a_repo("s3_restore/3"))
+
+  defp not_a_repo(call),
+    do:
+      "Ecto.Adapters.Sediment.#{call} expects a repo module or a keyword list of :s3 options"
 
   @doc """
   Imports an existing database file into the empty S3 location of `repo`, as
@@ -682,9 +723,14 @@ defmodule Ecto.Adapters.Sediment do
   """
   @spec s3_import(Ecto.Repo.t() | Keyword.t(), Path.t() | nil, Keyword.t()) ::
           {:ok, map()} | {:error, term()}
-  def s3_import(repo_or_s3, path \\ nil, opts \\ [])
+  def s3_import(repo_or_s3, path \\ nil, opts \\ []) do
+    Keys.scrubbed(fn ->
+      opts = Keys.options!(opts, "Ecto.Adapters.Sediment.s3_import/3")
+      import_into(repo_or_s3, path, opts)
+    end)
+  end
 
-  def s3_import(repo, path, opts) when is_atom(repo) do
+  defp import_into(repo, path, opts) when is_atom(repo) do
     config = repo.config()
 
     case config[:s3] do
@@ -707,14 +753,24 @@ defmodule Ecto.Adapters.Sediment do
               opts
           end
 
-        s3_import(s3, path || config[:database], opts)
+        import_into(s3, path || config[:database], opts)
     end
   end
 
-  def s3_import(s3, path, opts) when is_list(s3) and is_binary(path) do
+  defp import_into(s3, path, opts) when is_list(s3) and is_binary(path) do
     s3 = Connection.normalize_opts(s3: s3)[:s3]
     Sediment.S3.import(path, s3, opts)
   end
+
+  defp import_into(s3, _path, _opts) when is_list(s3),
+    do:
+      raise(
+        ArgumentError,
+        "Ecto.Adapters.Sediment.s3_import/3 needs the path of the file"
+      )
+
+  defp import_into(_other, _path, _opts),
+    do: raise(ArgumentError, not_a_repo("s3_import/3"))
 
   @doc """
   Whether the S3 location of `repo` holds a database (see
@@ -730,18 +786,20 @@ defmodule Ecto.Adapters.Sediment do
   instead: the repo then fails to connect rather than start empty.
   """
   @spec s3_exists?(Ecto.Repo.t() | Keyword.t()) :: boolean()
-  def s3_exists?(repo_or_s3)
+  def s3_exists?(repo_or_s3), do: Keys.scrubbed(fn -> exists?(repo_or_s3) end)
 
-  def s3_exists?(repo) when is_atom(repo) do
+  defp exists?(repo) when is_atom(repo) do
     case repo.config()[:s3] do
       nil -> raise ArgumentError, "#{inspect(repo)} is not configured with :s3"
-      s3 -> s3_exists?(s3)
+      s3 -> exists?(s3)
     end
   end
 
-  def s3_exists?(s3) when is_list(s3) do
+  defp exists?(s3) when is_list(s3) do
     Sediment.S3.exists?(Connection.normalize_opts(s3: s3)[:s3])
   end
+
+  defp exists?(_other), do: raise(ArgumentError, not_a_repo("s3_exists?/1"))
 
   @doc """
   Destroys the S3-backed database of `repo` (see `Sediment.S3.destroy/2`):
@@ -764,18 +822,21 @@ defmodule Ecto.Adapters.Sediment do
   """
   @spec s3_destroy(Ecto.Repo.t() | Keyword.t(), Keyword.t()) ::
           {:ok, map()} | {:error, term()}
-  def s3_destroy(repo_or_s3, opts \\ [])
+  def s3_destroy(repo_or_s3, opts \\ []),
+    do: Keys.scrubbed(fn -> destroy(repo_or_s3, opts) end)
 
-  def s3_destroy(repo, opts) when is_atom(repo) do
+  defp destroy(repo, opts) when is_atom(repo) do
     case repo.config()[:s3] do
       nil -> {:error, "#{inspect(repo)} is not configured with :s3"}
-      s3 -> s3_destroy(s3, opts)
+      s3 -> destroy(s3, opts)
     end
   end
 
-  def s3_destroy(s3, opts) when is_list(s3) do
+  defp destroy(s3, opts) when is_list(s3) do
     Sediment.S3.destroy(Connection.normalize_opts(s3: s3)[:s3], opts)
   end
+
+  defp destroy(_other, _opts), do: raise(ArgumentError, not_a_repo("s3_destroy/2"))
 
   @doc """
   Exports the repo's database to a new plain SQLite file at `dest` (see
@@ -801,9 +862,14 @@ defmodule Ecto.Adapters.Sediment do
   """
   @spec export_sqlite(Ecto.Repo.t() | Keyword.t(), Path.t(), Keyword.t()) ::
           {:ok, map()} | {:error, term()}
-  def export_sqlite(repo_or_s3, dest, opts \\ [])
+  def export_sqlite(repo_or_s3, dest, opts \\ []) do
+    Keys.scrubbed(fn ->
+      opts = Keys.options!(opts, "Ecto.Adapters.Sediment.export_sqlite/3")
+      export(repo_or_s3, dest, opts)
+    end)
+  end
 
-  def export_sqlite(repo, dest, opts) when is_atom(repo) do
+  defp export(repo, dest, opts) when is_atom(repo) do
     config = repo.config()
     {source, opts} = Keyword.pop(opts, :source)
 
@@ -815,15 +881,18 @@ defmodule Ecto.Adapters.Sediment do
 
     case {source, config[:s3]} do
       {nil, nil} -> Sediment.export_sqlite(config[:database], dest, opts)
-      {nil, s3} -> export_sqlite(s3, dest, opts)
+      {nil, s3} -> export(s3, dest, opts)
       {path, _} -> Sediment.export_sqlite(path, dest, opts)
     end
   end
 
-  def export_sqlite(s3, dest, opts) when is_list(s3) do
+  defp export(s3, dest, opts) when is_list(s3) do
     s3 = Connection.normalize_opts(s3: s3)[:s3]
     Sediment.export_sqlite(nil, dest, Keyword.put(opts, :from_s3, s3))
   end
+
+  defp export(_other, _dest, _opts),
+    do: raise(ArgumentError, not_a_repo("export_sqlite/3"))
 
   @impl Ecto.Adapter.Schema
   def autogenerate(:id), do: nil

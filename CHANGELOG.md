@@ -8,6 +8,16 @@
   through to every connection, to `s3_restore`, `s3_import` and the export
   task unchanged. Rotating keys is `Sediment.S3.rekey/3` with the repo
   stopped; see "Rotating keys" in sediment's S3 guide.
+* No key shows in an error from a repo configuration or options of the
+  wrong shape: `s3_restore`, `s3_import`, `s3_exists?`, `s3_destroy`,
+  `export_sqlite` (and their Mix tasks), the storage callbacks and the
+  pool's start handle them inside sediment's boundary (see its
+  CHANGELOG). Their options must be a keyword list; `repo_or_s3` of
+  another type is refused with a fixed message instead of a
+  `FunctionClauseError`. `storage_down/1` and `storage_status/1` without a
+  `:database` raise a fixed message instead of a `KeyError` (which showed
+  the whole configuration). `s3_restore` returns an error instead of
+  raising when it can't create the target's directory.
 
 ## 0.1.0-beta.4 (2026-10-08)
 
