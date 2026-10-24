@@ -1,7 +1,7 @@
 defmodule EctoSediment.MixProject do
   use Mix.Project
 
-  @version "0.1.0-beta.4"
+  @version "0.2.0-beta.1"
   @source_url "https://github.com/flmngco/ecto_sediment"
 
   def project do

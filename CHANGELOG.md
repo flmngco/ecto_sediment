@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0-beta.1 (Unreleased)
+## 0.2.0-beta.1 (2026-10-24)
 
 0.2 breaks 0.1, with sediment 0.2: the S3 manifest is version 4, the repo's
 `:encryption` is a key ring, and options of functions taking keys must be
