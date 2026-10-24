@@ -354,6 +354,22 @@ defmodule Ecto.Adapters.Sediment do
   use Ecto.Adapters.SQL,
     driver: :sediment
 
+  # The repo's database file and S3 location go into its adapter meta, for
+  # the rotation functions to name a repo running over a database they are
+  # asked to rekey (see not_running/1).
+  defoverridable init: 1
+
+  @impl Ecto.Adapter
+  def init(config) do
+    {:ok, child_spec, meta} = super(config)
+    sediment = %{database: expanded(config[:database]), s3: place(config[:s3])}
+    {:ok, child_spec, Map.put(meta, :sediment, sediment)}
+  end
+
+  defp expanded(":memory:"), do: nil
+  defp expanded(path) when is_binary(path), do: Path.expand(path)
+  defp expanded(_database), do: nil
+
   @behaviour Ecto.Adapter.Storage
   @behaviour Ecto.Adapter.Structure
 
@@ -365,6 +381,9 @@ defmodule Ecto.Adapters.Sediment do
   # the storage and the structure callbacks.
   use Sediment.S3.Keys.Sealed,
     only: [
+      s3_key_census: 1,
+      s3_rekey: 2,
+      s3_release_key: 3,
       checkpoint: 2,
       dump_cmd: 3,
       ensure_all_started: 2,
@@ -866,6 +885,307 @@ defmodule Ecto.Adapters.Sediment do
   end
 
   defp destroy(_other, _opts), do: raise(ArgumentError, not_a_repo("s3_destroy/2"))
+
+  ## Key rotation
+
+  @doc """
+  Moves the S3-backed database of `repo` to another key of its ring (see
+  `Sediment.S3.rekey/3` and "Rotating keys" in the S3 guide): the ring's
+  active key, or `:to`. Also available as `mix ecto.sediment.s3.rekey`.
+
+  `repo` is a repo module or the keyword configuration a dynamic repo is
+  started with (`:database`, `:s3`, `:encryption`): its `:database` is the
+  working copy the rekey goes through (left warm under the new key), its
+  `:encryption` the ring, unless the options give one.
+
+  Stop the repo first. Refused while the repo, or a running repo with the
+  same `:database` or S3 location, is running in this VM (the message
+  names it); it never stops a repo.
+
+  ## Options
+
+  `:encryption`, `:to`, `:force` and `:allow_reuse`, as for
+  `Sediment.S3.rekey/3`. The result is `Sediment.S3.rekey/3`'s: only
+  `{:ok, _}` is an outcome; after any error run it again, with both keys in
+  every ring until a run returns `{:ok, _}`.
+  """
+  @spec s3_rekey(Ecto.Repo.t() | Keyword.t(), Keyword.t()) ::
+          {:ok, map() | :current} | {:error, term()}
+  def s3_rekey(repo_or_config, opts \\ []) do
+    Keys.scrubbed(fn ->
+      opts = Keys.options!(opts, "Ecto.Adapters.Sediment.s3_rekey/2")
+      target = rotation_target!(repo_or_config, "s3_rekey/2")
+
+      with :ok <- not_running(target) do
+        Sediment.S3.rekey(target.path, target.s3, with_ring(opts, target))
+      end
+    end)
+  end
+
+  @doc """
+  Drops the retained epochs of `repo`'s database encrypted under `key_id`
+  (see `Sediment.S3.release_key/4`), so the key can leave the rings. Also
+  available as `mix ecto.sediment.s3.release_key`.
+
+  `repo` and the refusals as for `s3_rekey/2`; the options `:encryption`
+  and `:force`. The result is `Sediment.S3.release_key/4`'s.
+  """
+  @spec s3_release_key(Ecto.Repo.t() | Keyword.t(), String.t(), Keyword.t()) ::
+          {:ok, map()} | {:error, term()}
+  def s3_release_key(repo_or_config, key_id, opts \\ []) do
+    Keys.scrubbed(fn ->
+      opts = Keys.options!(opts, "Ecto.Adapters.Sediment.s3_release_key/3")
+      target = rotation_target!(repo_or_config, "s3_release_key/3")
+
+      with :ok <- not_running(target) do
+        Sediment.S3.release_key(target.path, target.s3, key_id, with_ring(opts, target))
+      end
+    end)
+  end
+
+  @doc """
+  Which keys `repo`'s database depends on (see `Sediment.S3.key_census/1`):
+  the current epoch's key and the retained epochs by key. It reads the
+  manifest only, so it is safe while the application runs. Also available
+  as `mix ecto.sediment.s3.key_census`.
+
+  `repo` is a repo module or a dynamic repo's keyword configuration (only
+  its `:s3` is used).
+  """
+  @spec s3_key_census(Ecto.Repo.t() | Keyword.t()) ::
+          {:ok, map() | :no_database} | {:error, term()}
+  def s3_key_census(repo_or_config) do
+    Keys.scrubbed(fn ->
+      target = rotation_target!(repo_or_config, "s3_key_census/1", false)
+      Sediment.S3.key_census(target.s3)
+    end)
+  end
+
+  @doc """
+  `s3_rekey/2` over many repos (see `Sediment.S3.rekey_many/2`, whose
+  options, retries and result it has): the way to rotate the keys of many
+  dynamic tenant databases, each paused only for its own rekey.
+
+  `targets` is a list of repo modules, dynamic repo configurations, or
+  `{id, repo_or_config}` (the id names it in the report; by default the
+  repo module, or the configuration's `:database`). Each target's ring is
+  its `:encryption`, unless `:encryption` (a ring, or a function of the
+  target as given) is passed.
+
+  `:around`, `:check` and `:on_result` get the target as given. A target
+  whose repo runs in this VM when its rekey starts (after `:around`) is
+  refused, reported in `failed:`: stop it in `:around`.
+
+      Ecto.Adapters.Sediment.s3_rekey_many(
+        for(id <- tenant_ids, do: {id, MyApp.Tenants.config(id)}),
+        max_concurrency: 4,
+        around: fn {id, _config}, rekey ->
+          :ok = MyApp.Tenants.close(id)
+
+          try do
+            rekey.()
+          after
+            MyApp.Tenants.open(id)
+          end
+        end
+      )
+
+  See "Rotating keys" in the guide.
+  """
+  @spec s3_rekey_many(Enumerable.t(), Keyword.t()) :: map()
+  def s3_rekey_many(targets, opts \\ []) do
+    {targets, opts} = many!(targets, opts, "s3_rekey_many/2")
+    Sediment.S3.rekey_many(targets, opts)
+  end
+
+  @doc """
+  `s3_release_key/3` over many repos (see `Sediment.S3.release_key_many/3`),
+  with the targets and options of `s3_rekey_many/2`.
+  """
+  @spec s3_release_key_many(Enumerable.t(), String.t(), Keyword.t()) :: map()
+  def s3_release_key_many(targets, key_id, opts \\ []) do
+    {targets, opts} = many!(targets, opts, "s3_release_key_many/3")
+    Sediment.S3.release_key_many(targets, key_id, opts)
+  end
+
+  @doc """
+  `s3_key_census/1` over many repos, aggregated by key (see
+  `Sediment.S3.key_census_many/2` for the result, and
+  `Sediment.S3.removable?/2` for whether a key can leave the rings). Safe
+  while the repos run.
+  """
+  @spec s3_key_census_many(Enumerable.t(), Keyword.t()) :: map()
+  def s3_key_census_many(targets, opts \\ []) do
+    {targets, opts} =
+      Keys.scrubbed(fn ->
+        opts = Keys.options!(opts, "Ecto.Adapters.Sediment.s3_key_census_many/2")
+        targets = many_targets!(targets, "s3_key_census_many/2", false)
+        {targets, given_callbacks(opts, [:on_result])}
+      end)
+
+    Sediment.S3.key_census_many(targets, opts)
+  end
+
+  # The targets as Sediment.S3's (`given:` the caller's), the caller's
+  # functions given back what it gave, the ring each target's own unless
+  # given, and the running check first.
+  defp many!(targets, opts, call) do
+    Keys.scrubbed(fn ->
+      opts = Keys.options!(opts, "Ecto.Adapters.Sediment.#{call}")
+      targets = many_targets!(targets, call, true)
+
+      opts =
+        opts
+        |> given_callbacks([:around, :on_result])
+        |> Keyword.put(:encryption, many_encryption(opts[:encryption]))
+        |> Keyword.put(:check, many_check(opts[:check]))
+
+      {targets, opts}
+    end)
+  end
+
+  defp many_encryption(nil), do: fn target -> target.encryption end
+
+  defp many_encryption(fun) when is_function(fun, 1),
+    do: fn target -> fun.(target.given) end
+
+  defp many_encryption(ring), do: ring
+
+  defp many_check(nil), do: &not_running/1
+
+  defp many_check(check) do
+    fn target ->
+      with :ok <- not_running(target), do: check.(target.given)
+    end
+  end
+
+  defp given_callbacks(opts, names) do
+    Enum.reduce(names, opts, fn name, opts ->
+      case opts[name] do
+        fun when is_function(fun, 2) -> Keyword.put(opts, name, given(fun))
+        _ -> opts
+      end
+    end)
+  end
+
+  defp given(fun), do: fn target, x -> fun.(target.given, x) end
+
+  defp many_targets!(targets, call, path?) do
+    if Enumerable.impl_for(targets) == nil,
+      do:
+        raise(
+          ArgumentError,
+          "Ecto.Adapters.Sediment.#{call}: the targets must be a list"
+        )
+
+    Enum.map(targets, fn
+      {id, repo_or_config} = given ->
+        %{rotation_target!(repo_or_config, call, path?) | given: given, id: id}
+
+      repo_or_config ->
+        rotation_target!(repo_or_config, call, path?)
+    end)
+  end
+
+  # A repo module or a dynamic repo's configuration, as a Sediment.S3
+  # target: %{id:, path:, s3:, encryption:, given:}.
+  defp rotation_target!(repo_or_config, call, path? \\ true)
+
+  defp rotation_target!(repo, call, path?) when is_atom(repo) and not is_nil(repo) do
+    unless Code.ensure_loaded?(repo) and function_exported?(repo, :config, 0),
+      do: raise(ArgumentError, not_a_repo_or_config(call))
+
+    %{rotation_target!(repo.config(), call, path?) | id: repo, given: repo}
+  end
+
+  defp rotation_target!(config, call, path?) when is_list(config) do
+    unless Keyword.keyword?(config),
+      do: raise(ArgumentError, not_a_repo_or_config(call))
+
+    s3 =
+      case Connection.normalize_opts(config)[:s3] do
+        s3 when is_list(s3) or is_map(s3) ->
+          s3
+
+        _ ->
+          raise ArgumentError,
+                "Ecto.Adapters.Sediment.#{call}: the repo is not configured with :s3"
+      end
+
+    path = if path?, do: Path.expand(database!(config, call)), else: config[:database]
+
+    %{
+      id: config[:database],
+      path: path,
+      s3: s3,
+      encryption: config[:encryption],
+      given: config
+    }
+  end
+
+  defp rotation_target!(_other, call, _path?),
+    do: raise(ArgumentError, not_a_repo_or_config(call))
+
+  defp not_a_repo_or_config(call),
+    do:
+      "Ecto.Adapters.Sediment.#{call} expects a repo module or a repo's keyword configuration"
+
+  defp with_ring(opts, target) do
+    case target.encryption do
+      nil -> opts
+      ring -> Keyword.put_new(opts, :encryption, ring)
+    end
+  end
+
+  # The repo running in this VM over the target's database (its file or
+  # its S3 location), if any: named in the refusal. Sediment refuses an open
+  # database too, without naming the repo.
+  defp not_running(target) do
+    place = place(target.s3)
+
+    running =
+      Enum.find(Ecto.Repo.all_running(), fn repo ->
+        # A repo just stopped is listed until the registry sees it go.
+        case alive?(repo) && repo_meta(repo) do
+          %{sediment: %{database: path}} when path == target.path -> true
+          %{sediment: %{s3: ^place}} -> place != nil
+          _ -> false
+        end
+      end)
+
+    case running do
+      nil ->
+        :ok
+
+      repo ->
+        {:error,
+         "#{shown_repo(repo)} is running in this VM over this database: stop it first " <>
+           "(rekey and release_key never stop a repo)"}
+    end
+  end
+
+  defp alive?(pid) when is_pid(pid), do: Process.alive?(pid)
+  defp alive?(name), do: GenServer.whereis(name) != nil
+
+  defp repo_meta(repo) do
+    Ecto.Adapter.lookup_meta(repo)
+  rescue
+    _ -> nil
+  end
+
+  defp shown_repo(pid) when is_pid(pid), do: "the dynamic repo #{inspect(pid)}"
+  defp shown_repo(name), do: "the repo #{Keys.shown_value(name)}"
+
+  defp place(s3) when is_list(s3) or is_map(s3) do
+    get = fn key -> if is_list(s3), do: Keyword.get(s3, key), else: Map.get(s3, key) end
+
+    case {get.(:bucket), get.(:prefix)} do
+      {nil, _} -> nil
+      {bucket, prefix} -> {get.(:endpoint), bucket, prefix}
+    end
+  end
+
+  defp place(_s3), do: nil
 
   @doc """
   Exports the repo's database to a new plain SQLite file at `dest` (see

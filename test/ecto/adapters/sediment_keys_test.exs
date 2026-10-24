@@ -237,6 +237,31 @@ defmodule Ecto.Adapters.SedimentKeysTest do
     end
   end
 
+  # Ecto's own configuration errors keep their message through the
+  # boundary (still under the net, without stack arguments).
+  test "Ecto's configuration errors say why; a key still never shows" do
+    base = [database: ":memory:", telemetry_prefix: [:review]]
+
+    assert_raise RuntimeError, ~r/invalid value for :log option/, fn ->
+      Adapter.init(base ++ [log: :verbose])
+    end
+
+    for config <- [
+          base ++ [encryption: ring(), log: String.to_atom(@k1)],
+          base ++ [encryption: ring(), log: :verbose, pool: ring()],
+          base ++ [encryption: ring(), pool: String.to_atom(@k1)]
+        ] do
+      refute_shown(fn -> Adapter.init(config) end, "init/1")
+    end
+
+    Process.flag(:trap_exit, true)
+
+    assert {:error, {%RuntimeError{message: message}, _}} =
+             DynamicRepo.start_link(name: nil, log: :verbose, database: ":memory:")
+
+    assert message =~ "invalid value for :log option"
+  end
+
   test "a repo started with a key in the wrong place of its configuration never shows it" do
     Process.flag(:trap_exit, true)
 
