@@ -24,7 +24,8 @@ CHANGELOG). The Hex dependency is `{:sediment, "~> 0.2.0-beta.1"}`.
     reopens each tenant, so each pauses only for its own rekey). The
     callbacks get each configuration with its `:encryption` hidden (still
     usable to start the repo); a reopen failing after the rekey fails the
-    tenant with `{:around_failed, reason, result}`.
+    tenant with `{:around_failed, reason, result}`, a linked process
+    exiting with `{:linked_exit, result}`.
   * `mix ecto.sediment.s3.rekey`, `mix ecto.sediment.s3.release_key KEY_ID`
     and `mix ecto.sediment.s3.key_census` for named repos (`-r`,
     repeatable): one line per repo, a non-zero exit on any failure. A repo
