@@ -22,7 +22,7 @@ up to the last moment S3 had, with no gaps.
   ```
 
   In your own app, depend on the Hex package instead:
-  `{:ecto_sediment, "~> 0.1"}` (it brings in `sediment`).
+  `{:ecto_sediment, "~> 0.2.0-beta.1"}` (it brings in `sediment`).
 
 ## 1. Start an S3 server
 

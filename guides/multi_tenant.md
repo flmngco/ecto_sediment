@@ -247,6 +247,10 @@ S3. `Sediment.S3.generate_key/0` generates a key. Any number of different
 keys can be open in one VM; every open of the same database file must use
 the same key.
 
+To change tenant keys, make `:encryption` a key ring and rotate the tenants
+with `Ecto.Adapters.Sediment.s3_rekey_many/2`: see "Rotating keys" in the S3
+guide.
+
 ## Creating a tenant
 
 There is no separate create step. The first `with_tenant/2` call for a new

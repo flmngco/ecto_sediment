@@ -42,7 +42,7 @@ transactions, encryption, S3-backed databases) · [Oban](#oban) ·
 ```elixir
 defp deps do
   [
-    {:ecto_sediment, "~> 0.1"}
+    {:ecto_sediment, "~> 0.2.0-beta.1"}
   ]
 end
 ```

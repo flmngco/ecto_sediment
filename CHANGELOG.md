@@ -1,5 +1,64 @@
 # Changelog
 
+## 0.2.0-beta.1 (Unreleased)
+
+0.2 breaks 0.1, with sediment 0.2: the S3 manifest is version 4, the repo's
+`:encryption` is a key ring, and options of functions taking keys must be
+keyword lists. Data written by 0.1 is not migrated (see sediment's
+CHANGELOG). The Hex dependency is `{:sediment, "~> 0.2.0-beta.1"}`.
+
+* Requires sediment with key rotation (manifest version 4; see its
+  CHANGELOG, a breaking change for S3 prefixes written by older versions).
+  The repo's `:encryption` may be a key ring (`keys:`, `key_for:`), passed
+  through to every connection, to `s3_restore`, `s3_import` and the export
+  task unchanged.
+* Key rotation for repos (see "Rotating keys" in the S3 guide):
+  * `s3_rekey/2`, `s3_release_key/3` and `s3_key_census/1` take a repo
+    module or a dynamic repo's configuration (`:database`, `:s3`,
+    `:encryption`); the results are sediment's. A rekey or release of a
+    repo running in this VM (or of its database file or S3 location) is
+    refused with a message naming the repo; a repo is never stopped.
+  * `s3_rekey_many/2`, `s3_release_key_many/3` and `s3_key_census_many/2`
+    run them over repos and `{id, config}` tenant configurations, a few at
+    a time, with sediment's retries and callbacks (`around:` closes and
+    reopens each tenant, so each pauses only for its own rekey). The
+    callbacks get each configuration with its `:encryption` hidden (still
+    usable to start the repo); a reopen failing after the rekey fails the
+    tenant with `{:around_failed, reason, result}`, a linked process
+    exiting with `{:linked_exit, result}`.
+  * `mix ecto.sediment.s3.rekey`, `mix ecto.sediment.s3.release_key KEY_ID`
+    and `mix ecto.sediment.s3.key_census` for named repos (`-r`,
+    repeatable): one line per repo, a non-zero exit on any failure. A repo
+    whose S3 location holds no database prints `no database at
+    <bucket>/<prefix>: wrong bucket or prefix?` and fails the task: a
+    misaddressed repo must never read as done, nor its key as removable.
+  * The running-repo check works without `:ecto` started (a release's
+    `eval`); the tasks start `:ecto` so that it sees the repos.
+* Ecto's own configuration errors (`log: :verbose`, a driver missing) keep
+  their message through sediment's boundary, under its net.
+* No key shows in an error from a repo configuration or options of the
+  wrong shape: every documented function of the adapter (`s3_*`,
+  `export_sqlite`, `checkpoint`, `dump_cmd`, and so their Mix tasks), the
+  configuration callbacks (`init/1`, which a repo's start runs its
+  configuration through, and `ensure_all_started/2`), the storage and
+  structure callbacks (`structure_dump`, `structure_load`) and the pool's
+  start run inside sediment's boundary, with its net on every error (see
+  its CHANGELOG). A pool option of the wrong type (`pool: <a ring>`,
+  `pool_size: <a key>`) is refused with a fixed message, where Ecto or the
+  pool's process failed with the value in the error or crash report. Their options must be a keyword list; `repo_or_s3` of
+  another type is refused with a fixed message instead of a
+  `FunctionClauseError`. `storage_down/1` and `storage_status/1` without a
+  `:database` raise a fixed message instead of a `KeyError` (which showed
+  the whole configuration). `s3_restore` returns an error instead of
+  raising when it can't create the target's directory.
+* In the SQL sandbox, a transaction begun after the database rolled the
+  test's transaction back (a write-write conflict, `ON CONFLICT ROLLBACK`)
+  raises `Sediment.Error` ("the transaction was rolled back by the
+  database ...") and keeps the connection, where it crashed it with a
+  `CaseClauseError`.
+* The S3 guide says how to import a file restored from before a key
+  rotation (`source_encryption:` with that epoch's key).
+
 ## 0.1.0-beta.4 (2026-10-08)
 
 * Requires sediment 0.1.0-beta.5: warm reopen of S3 databases, and a fix

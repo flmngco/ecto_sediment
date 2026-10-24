@@ -66,8 +66,10 @@ defmodule Ecto.Adapters.Sediment.Connection do
   defp default_journal_mode(opts), do: if(opts[:s3], do: :mvcc, else: :wal)
 
   def start_link(opts) do
-    opts = default_opts(opts)
-    DBConnection.start_link(Sediment.Connection, opts)
+    # Sediment.start_link/1: the pool keeps the :encryption keys hidden
+    # (crash reports, :sys.get_status), as with child_spec/1
+    # (the options hold keys: see Sediment.S3.Keys.scrubbed/1)
+    Sediment.S3.Keys.scrubbed(fn -> opts |> default_opts() |> Sediment.start_link() end)
   end
 
   @impl true
@@ -76,7 +78,9 @@ defmodule Ecto.Adapters.Sediment.Connection do
     # Sediment.child_spec/1: with :s3, the repo's supervisor waits for
     # the pool to close its connections (async durability drains pending
     # uploads) instead of killing it after 5 s
-    options |> default_opts() |> Sediment.child_spec()
+    Sediment.S3.Keys.scrubbed(fn ->
+      options |> default_opts() |> Sediment.child_spec()
+    end)
   end
 
   @impl true
