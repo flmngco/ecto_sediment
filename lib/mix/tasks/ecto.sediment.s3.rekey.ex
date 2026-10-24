@@ -10,16 +10,20 @@ defmodule Mix.Tasks.Ecto.Sediment.S3.Rekey do
   `:encryption` ring, see `Ecto.Adapters.Sediment.s3_rekey/2` and "Rotating
   keys" in the S3 guide.
 
-  **Stop the application first**: a repo running in this VM is refused, and
-  a writer elsewhere holds the lease (`--force` fences it). Every node's
-  ring needs the new key before the rekey.
+  **Stop the application first**, on every node. The task runs in a VM of
+  its own, which doesn't see the application: a running application holds
+  the database's lease, and the rekey fails with `"s3 lease held by <owner>
+  ..."`, naming the node to stop. Every node's ring needs the new key
+  before the rekey.
 
   Prints one line per repo. Exits non-zero when any repo's rekey didn't
   succeed: only a success is an outcome (the switch may still happen after
   an error), so keep both keys in every ring and run it again.
 
   Dynamic repos (tenants started with `name: nil`) aren't visible to Mix:
-  use `Ecto.Adapters.Sediment.s3_rekey_many/2` from a release's `eval`.
+  use `Ecto.Adapters.Sediment.s3_rekey_many/2` inside the live node
+  (`bin/my_app rpc`), or from `bin/my_app eval` with the application
+  stopped (see "Rotating keys" in the S3 guide).
 
   ## Examples
 
@@ -30,7 +34,10 @@ defmodule Mix.Tasks.Ecto.Sediment.S3.Rekey do
 
     * `-r`, `--repo` - a repo to rekey (repeatable)
     * `--to` - the key id to move to (default: the ring's active key)
-    * `--force` - take the lease even while a writer holds it, fencing it
+    * `--force` - take the lease even while a writer holds it, fencing it:
+      under `durability: :async` its acknowledged commits not yet uploaded
+      are lost. Only for a holder known to be gone (a crashed run), never
+      for a running application
     * `--allow-reuse` - allow a retired key
     * `--no-compile` - does not compile applications before running
     * `--no-deps-check` - does not check dependencies before running

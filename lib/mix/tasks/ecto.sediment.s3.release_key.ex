@@ -12,7 +12,9 @@ defmodule Mix.Tasks.Ecto.Sediment.S3.ReleaseKey do
   `mix ecto.sediment.s3.key_census` no longer lists the key, it can leave
   the rings.
 
-  **Stop the application first**, as for `mix ecto.sediment.s3.rekey`. The
+  **Stop the application first**, on every node, as for
+  `mix ecto.sediment.s3.rekey` (the task's own VM doesn't see it; its lease
+  makes the release fail with `"s3 lease held by ..."`). The
   current key is refused (rekey first).
 
   Prints one line per repo and exits non-zero when any repo's release
@@ -25,7 +27,10 @@ defmodule Mix.Tasks.Ecto.Sediment.S3.ReleaseKey do
   ## Command line options
 
     * `-r`, `--repo` - a repo (repeatable)
-    * `--force` - take the lease even while a writer holds it, fencing it
+    * `--force` - take the lease even while a writer holds it, fencing it:
+      under `durability: :async` its acknowledged commits not yet uploaded
+      are lost. Only for a holder known to be gone (a crashed run), never
+      for a running application
     * `--no-compile` - does not compile applications before running
     * `--no-deps-check` - does not check dependencies before running
   """

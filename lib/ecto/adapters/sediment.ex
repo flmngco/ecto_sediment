@@ -900,7 +900,10 @@ defmodule Ecto.Adapters.Sediment do
 
   Stop the repo first. Refused while the repo, or a running repo with the
   same `:database` or S3 location, is running in this VM (the message
-  names it); it never stops a repo.
+  names it); it never stops a repo. Only this VM is seen: a repo running in
+  another VM holds the database's lease, and the rekey fails with
+  `"s3 lease held by <owner> ..."` (stop it there; `:force` would fence it,
+  losing its commits not yet uploaded).
 
   ## Options
 
@@ -974,7 +977,10 @@ defmodule Ecto.Adapters.Sediment do
 
   `:around`, `:check` and `:on_result` get the target as given. A target
   whose repo runs in this VM when its rekey starts (after `:around`) is
-  refused, reported in `failed:`: stop it in `:around`.
+  refused, reported in `failed:`: stop it in `:around`. Both only see this
+  VM, so run it inside the node that has the tenants open (`bin/my_app
+  rpc`, a remote shell), or with the application stopped everywhere
+  (`bin/my_app eval`, without `:around`).
 
       Ecto.Adapters.Sediment.s3_rekey_many(
         for(id <- tenant_ids, do: {id, MyApp.Tenants.config(id)}),
