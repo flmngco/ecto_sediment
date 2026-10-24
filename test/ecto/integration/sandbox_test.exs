@@ -144,4 +144,55 @@ defmodule Ecto.Integration.SandboxTest do
       end
     end
   end
+
+  describe "a begin refused on a transaction the database rolled back" do
+    # A transaction (a savepoint in the sandbox's) begun after the database
+    # rolled the sandbox's transaction back is refused with an error, and
+    # the connection kept: its state comes back unchanged (the key net,
+    # Sediment.S3.Keys.scrubbed/1, rewrites only text), even where the path
+    # and a cached statement hold runs of 32+ hex digits.
+    setup %{tmp_dir: dir} do
+      dir = Path.join(dir, String.duplicate("ab", 16))
+      File.mkdir_p!(dir)
+      path = Path.join(dir, "sandbox.db")
+      test = self()
+
+      :telemetry.attach(
+        {__MODULE__, path},
+        [:sediment, :prepare, :stop],
+        fn _event, _measurements, metadata, _config ->
+          send(test, {:prepared, metadata.query, metadata.result, metadata.database})
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach({__MODULE__, path}) end)
+      # One connection: the second checkout gets the same.
+      %{repo: start_sandboxed(database: path, pool_size: 1), path: path}
+    end
+
+    test "keeps the connection's path and statement cache", %{repo: repo, path: path} do
+      %{pid: pool, opts: opts} = Ecto.Adapter.lookup_meta(repo)
+      prepare = fn -> Sediment.prepare!(pool, "", hex(), opts) end
+      :ok = Sandbox.checkout(repo)
+      %{ref: ref} = prepare.()
+      assert_receive {:prepared, _, {:ok, _}, ^path}
+      Repo.query!("INSERT INTO items (id, name) VALUES (1, 'a')")
+
+      assert {:error, _} =
+               Repo.query("INSERT OR ROLLBACK INTO items (id, name) VALUES (1, 'b')")
+
+      assert_raise Sediment.Error, ~r/the transaction was rolled back/, fn ->
+        Repo.transaction(fn -> :ok end)
+      end
+
+      :ok = Sandbox.checkin(repo)
+
+      :ok = Sandbox.checkout(repo)
+      assert %{ref: ^ref} = prepare.()
+      assert_receive {:prepared, _, {:ok, _}, ^path}
+    end
+  end
+
+  defp hex, do: "SELECT x'#{String.duplicate("cd", 16)}'"
 end

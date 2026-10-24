@@ -131,15 +131,75 @@ defmodule Ecto.Adapters.SedimentKeysTest do
     ]
   end
 
+  # Configurations right but for one value, holding `key` (or missing what
+  # Ecto requires).
+  defp configs(key) do
+    ring = [keys: [{"r1", key}], cipher: "aegis256"]
+    base = [database: ":memory:", telemetry_prefix: [:review]]
+
+    [
+      base ++ [encryption: ring, pool: ring],
+      base ++ [encryption: ring, pool: String.to_atom(key)],
+      base ++ [encryption: ring, pool_size: key],
+      [database: ":memory:", encryption: ring],
+      Map.new(base ++ [encryption: ring])
+    ]
+  end
+
   # The callbacks taking the repo's configuration, besides the documented
-  # functions.
+  # functions: the configuration callbacks (a repo's start runs its
+  # configuration through them), storage and structure.
   @callbacks [
+    init: 1,
+    ensure_all_started: 2,
     storage_up: 1,
     storage_down: 1,
     storage_status: 1,
     structure_dump: 2,
     structure_load: 2
   ]
+
+  # What the arguments not probed can be: nil, the shape probed, a valid
+  # configuration or a start type.
+  @valid [[database: ":memory:", telemetry_prefix: [:review]], :temporary]
+
+  defp fills(arity, position, shape) do
+    Enum.reduce((arity - 1)..0//-1, [[]], fn q, tails ->
+      choices = if q == position, do: [shape], else: [nil, shape | @valid]
+      for choice <- choices, tail <- tails, do: [choice | tail]
+    end)
+  end
+
+  @events (for(
+             kind <- [:query, :prepare, :export],
+             stage <- [:start, :stop, :exception],
+             do: [:sediment, kind, stage]
+           ) ++
+             for(
+               op <- [:refresh, :snapshot, :restore, :import, :destroy, :flush],
+               stage <- [:start, :stop, :exception],
+               do: [:sediment, :s3, op, stage]
+             )) ++ [[:sediment, :connection, :disconnect]]
+
+  @doc false
+  def forward(event, measurements, metadata, test),
+    do: send(test, {:telemetry, event, measurements, metadata})
+
+  # The telemetry events emitted meanwhile, without the caller's own values
+  # (SQL, parameters, paths).
+  defp events do
+    receive do
+      {:telemetry, event, measurements, metadata} ->
+        metadata =
+          Map.drop(metadata, [:query, :params, :database, :path, :source, :dest])
+
+        [inspect({event, measurements, metadata}, limit: :infinity) | events()]
+    after
+      0 -> []
+    end
+  end
+
+  defp windows(key), do: for(i <- 0..(byte_size(key) - 16), do: binary_part(key, i, 16))
 
   test "no documented function or configuration callback shows a key, in any shape" do
     {:docs_v1, _, _, _, _, _, docs} = Code.fetch_docs(Adapter)
@@ -152,18 +212,66 @@ defmodule Ecto.Adapters.SedimentKeysTest do
     assert {:dump_cmd, 3} in documented
     assert {:s3_refresh, 1} in documented
 
-    for {name, arity} <- documented ++ @callbacks,
-        key <- [@k1, String.duplicate("6e", 16)],
-        position <- 0..(arity - 1),
-        shape <- shapes(key),
-        fill <- [nil, shape] do
-      args = fill |> List.duplicate(arity) |> List.replace_at(position, shape)
-      {_outcome, texts} = shown(fn -> apply(Adapter, name, args) end)
+    handler = {__MODULE__, self()}
+    :telemetry.attach_many(handler, @events, &__MODULE__.forward/4, self())
+    on_exit(fn -> :telemetry.detach(handler) end)
+    Process.flag(:trap_exit, true)
 
-      for text <- texts, i <- 0..(byte_size(key) - 16) do
-        refute text =~ binary_part(key, i, 16),
-               "#{name}/#{arity}, argument #{position + 1}"
-      end
+    {_, log} =
+      ExUnit.CaptureLog.with_log(fn ->
+        for {name, arity} <- documented ++ @callbacks,
+            key <- [@k1, String.duplicate("6e", 16)],
+            position <- 0..(arity - 1),
+            shape <- shapes(key) ++ configs(key),
+            args <- fills(arity, position, shape) do
+          {_outcome, texts} = shown(fn -> apply(Adapter, name, args) end)
+
+          for text <- texts ++ events(), window <- windows(key) do
+            refute text =~ window, "#{name}/#{arity}, argument #{position + 1}"
+          end
+        end
+      end)
+
+    for key <- [@k1, String.duplicate("6e", 16)], window <- windows(key) do
+      refute log =~ window, "the log shows a key"
+    end
+  end
+
+  test "a repo started with a key in the wrong place of its configuration never shows it" do
+    Process.flag(:trap_exit, true)
+
+    for {case, config} <- [
+          {"pool: ring", [pool: ring()]},
+          {"pool: a key", [pool: String.to_atom(@k1)]},
+          {"pool_size: a key", [pool_size: @k1]},
+          {"queue_target: a ring", [queue_target: ring()]}
+        ] do
+      {result, log} =
+        ExUnit.CaptureLog.with_log(fn ->
+          shown(fn ->
+            DynamicRepo.start_link(
+              [name: nil, log: false, database: ":memory:", encryption: ring()] ++
+                config
+            )
+          end)
+        end)
+
+      {outcome, texts} = result
+      assert outcome != :ok, "#{case}: accepted"
+
+      exits =
+        for {:EXIT, _pid, reason} <- flush_messages(),
+            do: inspect(reason, limit: :infinity)
+
+      refute_keys(texts ++ exits ++ [log], case)
+    end
+  end
+
+  defp flush_messages do
+    receive do
+      message -> [message | flush_messages()]
+    after
+      0 -> []
     end
   end
 

@@ -11,14 +11,23 @@
 * No key shows in an error from a repo configuration or options of the
   wrong shape: every documented function of the adapter (`s3_*`,
   `export_sqlite`, `checkpoint`, `dump_cmd`, and so their Mix tasks), the
-  storage and structure callbacks (`structure_dump`, `structure_load`) and
-  the pool's start run inside sediment's boundary, with its net on every
-  error (see its CHANGELOG). Their options must be a keyword list; `repo_or_s3` of
+  configuration callbacks (`init/1`, which a repo's start runs its
+  configuration through, and `ensure_all_started/2`), the storage and
+  structure callbacks (`structure_dump`, `structure_load`) and the pool's
+  start run inside sediment's boundary, with its net on every error (see
+  its CHANGELOG). A pool option of the wrong type (`pool: <a ring>`,
+  `pool_size: <a key>`) is refused with a fixed message, where Ecto or the
+  pool's process failed with the value in the error or crash report. Their options must be a keyword list; `repo_or_s3` of
   another type is refused with a fixed message instead of a
   `FunctionClauseError`. `storage_down/1` and `storage_status/1` without a
   `:database` raise a fixed message instead of a `KeyError` (which showed
   the whole configuration). `s3_restore` returns an error instead of
   raising when it can't create the target's directory.
+* In the SQL sandbox, a transaction begun after the database rolled the
+  test's transaction back (a write-write conflict, `ON CONFLICT ROLLBACK`)
+  raises `Sediment.Error` ("the transaction was rolled back by the
+  database ...") and keeps the connection, where it crashed it with a
+  `CaseClauseError`.
 * The S3 guide says how to import a file restored from before a key
   rotation (`source_encryption:` with that epoch's key).
 
