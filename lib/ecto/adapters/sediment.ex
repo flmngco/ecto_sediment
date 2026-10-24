@@ -975,7 +975,10 @@ defmodule Ecto.Adapters.Sediment do
   its `:encryption`, unless `:encryption` (a ring, or a function of the
   target as given) is passed.
 
-  `:around`, `:check` and `:on_result` get the target as given. A target
+  `:around`, `:check` and `:on_result` get the target as given, its
+  configuration's `:encryption` hidden (it inspects as
+  `#Sediment.S3.Keys.Hidden<redacted>`; a repo started with that
+  configuration opens with it). A target
   whose repo runs in this VM when its rekey starts (after `:around`) is
   refused, reported in `failed:`: stop it in `:around`. Both only see this
   VM, so run it inside the node that has the tenants open (`bin/my_app
@@ -991,7 +994,9 @@ defmodule Ecto.Adapters.Sediment do
           try do
             rekey.()
           after
-            MyApp.Tenants.open(id)
+            # `after` discards what it returns: a failed reopen must raise,
+            # failing the target ({:around_failed, reason, rekey_result}).
+            :ok = MyApp.Tenants.open(id)
           end
         end
       )

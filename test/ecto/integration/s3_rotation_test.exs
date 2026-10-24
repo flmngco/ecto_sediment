@@ -121,6 +121,26 @@ defmodule Ecto.Integration.S3RotationTest do
     assert {:ok, %{to: "r2"}} = Adapter.s3_rekey(Repo)
   end
 
+  test "a reopen failing after the rekey fails the tenant, the rekey's result kept",
+       %{tmp_dir: dir} do
+    config = config(dir, "reopen", ["r1"])
+    write!(config, ["a"])
+    both = Keyword.put(config, :encryption, ring(["r2", "r1"]))
+
+    assert %{
+             rekeyed: [],
+             failed: [{"t", {:around_failed, :reopen_failed, {:ok, %{to: "r2"}}}}]
+           } =
+             Adapter.s3_rekey_many([{"t", both}],
+               around: fn {"t", _config}, rekey ->
+                 rekey.()
+                 {:error, :reopen_failed}
+               end
+             )
+
+    assert %{current: ["t"], failed: []} = Adapter.s3_rekey_many([{"t", both}])
+  end
+
   test "rekey_many over dynamic tenant repos, each closed and reopened around its rekey",
        %{
          tmp_dir: dir
@@ -156,6 +176,9 @@ defmodule Ecto.Integration.S3RotationTest do
           do: {id, Keyword.put(config, :encryption, ring(["r2", "r1"]))}
         ),
         around: fn {id, config}, rekey ->
+          # The ring hidden, still the one the repo reopens with.
+          assert %Sediment.S3.Keys.Hidden{} = config[:encryption]
+          refute inspect(config, limit: :infinity) =~ @k1
           close.(id)
           [other] = Map.keys(tenants) -- [id]
           send(test, {:paused, id, other_running: :ets.member(running, other)})

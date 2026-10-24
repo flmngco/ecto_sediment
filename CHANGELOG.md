@@ -21,7 +21,10 @@ CHANGELOG). The Hex dependency is `{:sediment, "~> 0.2.0-beta.1"}`.
   * `s3_rekey_many/2`, `s3_release_key_many/3` and `s3_key_census_many/2`
     run them over repos and `{id, config}` tenant configurations, a few at
     a time, with sediment's retries and callbacks (`around:` closes and
-    reopens each tenant, so each pauses only for its own rekey).
+    reopens each tenant, so each pauses only for its own rekey). The
+    callbacks get each configuration with its `:encryption` hidden (still
+    usable to start the repo); a reopen failing after the rekey fails the
+    tenant with `{:around_failed, reason, result}`.
   * `mix ecto.sediment.s3.rekey`, `mix ecto.sediment.s3.release_key KEY_ID`
     and `mix ecto.sediment.s3.key_census` for named repos (`-r`,
     repeatable): one line per repo, a non-zero exit on any failure. A repo
