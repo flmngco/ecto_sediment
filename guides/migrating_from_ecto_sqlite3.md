@@ -10,7 +10,7 @@ applications switch with a few lines of configuration.
 
    ```elixir
    # {:ecto_sqlite3, "~> 0.17"},
-   {:ecto_sediment, "~> 0.1"}
+   {:ecto_sediment, "~> 0.2.0-beta.1"}
    ```
 
    sediment, the driver, comes with it, with a precompiled NIF for the

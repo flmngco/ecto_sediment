@@ -1,13 +1,32 @@
 # Changelog
 
-## Unreleased
+## 0.2.0-beta.1 (Unreleased)
+
+0.2 breaks 0.1, with sediment 0.2: the S3 manifest is version 4, the repo's
+`:encryption` is a key ring, and options of functions taking keys must be
+keyword lists. Data written by 0.1 is not migrated (see sediment's
+CHANGELOG). The Hex dependency is `{:sediment, "~> 0.2.0-beta.1"}`.
 
 * Requires sediment with key rotation (manifest version 4; see its
   CHANGELOG, a breaking change for S3 prefixes written by older versions).
   The repo's `:encryption` may be a key ring (`keys:`, `key_for:`), passed
   through to every connection, to `s3_restore`, `s3_import` and the export
-  task unchanged. Rotating keys is `Sediment.S3.rekey/3` with the repo
-  stopped; see "Rotating keys" in sediment's S3 guide.
+  task unchanged.
+* Key rotation for repos (see "Rotating keys" in the S3 guide):
+  * `s3_rekey/2`, `s3_release_key/3` and `s3_key_census/1` take a repo
+    module or a dynamic repo's configuration (`:database`, `:s3`,
+    `:encryption`); the results are sediment's. A rekey or release of a
+    repo running in this VM (or of its database file or S3 location) is
+    refused with a message naming the repo; a repo is never stopped.
+  * `s3_rekey_many/2`, `s3_release_key_many/3` and `s3_key_census_many/2`
+    run them over repos and `{id, config}` tenant configurations, a few at
+    a time, with sediment's retries and callbacks (`around:` closes and
+    reopens each tenant, so each pauses only for its own rekey).
+  * `mix ecto.sediment.s3.rekey`, `mix ecto.sediment.s3.release_key KEY_ID`
+    and `mix ecto.sediment.s3.key_census` for named repos (`-r`,
+    repeatable): one line per repo, a non-zero exit on any failure.
+* Ecto's own configuration errors (`log: :verbose`, a driver missing) keep
+  their message through sediment's boundary, under its net.
 * No key shows in an error from a repo configuration or options of the
   wrong shape: every documented function of the adapter (`s3_*`,
   `export_sqlite`, `checkpoint`, `dump_cmd`, and so their Mix tasks), the

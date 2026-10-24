@@ -8,7 +8,7 @@ ecto_sqlite3 project, see the [migration guide](migrating_from_ecto_sqlite3.md).
 ```elixir
 defp deps do
   [
-    {:ecto_sediment, "~> 0.1"}
+    {:ecto_sediment, "~> 0.2.0-beta.1"}
   ]
 end
 ```
