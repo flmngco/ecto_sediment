@@ -133,4 +133,91 @@ defmodule Mix.Tasks.Ecto.Sediment.S3.RotationTest do
     assert [line] = output()
     assert line =~ "census failed"
   end
+
+  # A misaddressed repo reads "no database": never an outcome, and never a
+  # sign that a key can go.
+  @tag :s3
+  test "the census, rekey and release fail the task where no database is" do
+    :ok = ensure_bucket()
+
+    for {case, s3} <- [
+          {"an empty prefix", s3_opts(unique_prefix("absent"))},
+          {"a bucket that doesn't exist",
+           Keyword.put(
+             s3_opts("p"),
+             :bucket,
+             "td9qug-none-#{System.unique_integer([:positive])}"
+           )}
+        ] do
+      Application.put_env(:ecto_sediment, DynamicRepo,
+        database: Temp.path!(),
+        s3: s3,
+        encryption: ring(["r2", "r1"]),
+        log: false
+      )
+
+      for run <- [
+            fn -> KeyCensus.run(repo()) end,
+            fn -> Rekey.run(repo()) end,
+            fn -> ReleaseKey.run(["r1" | repo()]) end
+          ] do
+        assert_raise Mix.Error, ~r/1 of 1 repos failed/, run
+        assert [line] = output()
+
+        assert line =~
+                 "no database at #{s3[:bucket]}/#{s3[:prefix]}: wrong bucket or prefix?",
+               case
+      end
+    end
+  end
+
+  # The tasks and s3_rekey/2 in a VM of their own, without :ecto started (as
+  # in a project's `mix`, or a release's eval): the running-repo check needs
+  # no registry.
+  @tag :s3
+  test "the tasks and s3_rekey/2 run in a fresh VM without :ecto" do
+    :ok = ensure_bucket()
+    s3 = s3_opts(unique_prefix("fresh-vm"))
+
+    config =
+      inspect(
+        [database: Temp.path!(), s3: s3, encryption: ring(["r2", "r1"]), log: false],
+        limit: :infinity
+      )
+
+    put = "Application.put_env(:ecto_sediment, EctoSediment.DynamicRepo, #{config});"
+
+    {output, 0} =
+      fresh_vm(
+        "Application.ensure_all_started(:sediment); false = :ecto in Enum.map(Application.started_applications(), &elem(&1, 0)); " <>
+          "IO.inspect(Ecto.Adapters.Sediment.s3_rekey(#{config}))"
+      )
+
+    assert output =~ ~s("s3 config: no database at)
+    refute output =~ "details withheld"
+
+    for task <- [
+          ~s("ecto.sediment.s3.key_census", ["-r", "EctoSediment.DynamicRepo"]),
+          ~s("ecto.sediment.s3.rekey", ["-r", "EctoSediment.DynamicRepo"]),
+          ~s("ecto.sediment.s3.release_key", ["r1", "-r", "EctoSediment.DynamicRepo"])
+        ] do
+      {output, status} = fresh_vm(put <> "Mix.Task.run(#{task})")
+      assert status != 0, output
+
+      assert output =~
+               "no database at #{s3[:bucket]}/#{s3[:prefix]}: wrong bucket or prefix?",
+             output
+
+      refute output =~ "details withheld"
+    end
+  end
+
+  defp fresh_vm(code) do
+    System.cmd(
+      "mix",
+      ["run", "--no-start", "--no-compile", "--no-deps-check", "-e", code],
+      env: [{"MIX_ENV", "test"}],
+      stderr_to_stdout: true
+    )
+  end
 end

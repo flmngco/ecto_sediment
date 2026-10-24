@@ -20,6 +20,9 @@ defmodule Mix.Tasks.Ecto.Sediment.S3.ReleaseKey do
   Prints one line per repo and exits non-zero when any repo's release
   didn't succeed (run it again).
 
+  A repo whose S3 location holds no database prints `no database at
+  <bucket>/<prefix>: wrong bucket or prefix?` and fails the task.
+
   ## Examples
 
       $ mix ecto.sediment.s3.release_key r1 -r MyApp.Repo
@@ -55,23 +58,29 @@ defmodule Mix.Tasks.Ecto.Sediment.S3.ReleaseKey do
           Keyword.take(opts, [:force])
         )
 
-      case result do
-        {:ok, %{epochs: []}} ->
-          Rotation.info("#{inspect(repo)}: no epoch under key #{key_id}")
-
-        {:ok, %{key: key, epochs: epochs}} ->
-          Rotation.info(
-            "#{inspect(repo)}: released key #{key} (#{length(epochs)} epochs dropped)"
-          )
-
-        {:error, reason} ->
-          Rotation.error(
-            "#{inspect(repo)}: release failed: #{Rotation.reason(reason)} " <>
-              "(keep the key in every ring and run it again)"
-          )
-      end
+      if Rotation.absent?(result),
+        do: Rotation.absent(repo),
+        else: report(repo, key_id, result)
 
       result
     end)
+  end
+
+  defp report(repo, key_id, result) do
+    case result do
+      {:ok, %{epochs: []}} ->
+        Rotation.info("#{inspect(repo)}: no epoch under key #{key_id}")
+
+      {:ok, %{key: key, epochs: epochs}} ->
+        Rotation.info(
+          "#{inspect(repo)}: released key #{key} (#{length(epochs)} epochs dropped)"
+        )
+
+      {:error, reason} ->
+        Rotation.error(
+          "#{inspect(repo)}: release failed: #{Rotation.reason(reason)} " <>
+            "(keep the key in every ring and run it again)"
+        )
+    end
   end
 end

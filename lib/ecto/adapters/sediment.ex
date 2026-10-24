@@ -1017,7 +1017,8 @@ defmodule Ecto.Adapters.Sediment do
   @doc """
   `s3_key_census/1` over many repos, aggregated by key (see
   `Sediment.S3.key_census_many/2` for the result, and
-  `Sediment.S3.removable?/2` for whether a key can leave the rings). Safe
+  `Sediment.S3.removable?/3` for whether a key can leave the rings: false
+  while any target is absent, which a wrong bucket or prefix looks like). Safe
   while the repos run.
   """
   @spec s3_key_census_many(Enumerable.t(), Keyword.t()) :: map()
@@ -1150,7 +1151,7 @@ defmodule Ecto.Adapters.Sediment do
     place = place(target.s3)
 
     running =
-      Enum.find(Ecto.Repo.all_running(), fn repo ->
+      Enum.find(running_repos(), fn repo ->
         # A repo just stopped is listed until the registry sees it go.
         case alive?(repo) && repo_meta(repo) do
           %{sediment: %{database: path}} when path == target.path -> true
@@ -1168,6 +1169,12 @@ defmodule Ecto.Adapters.Sediment do
          "#{shown_repo(repo)} is running in this VM over this database: stop it first " <>
            "(rekey and release_key never stop a repo)"}
     end
+  end
+
+  # Ecto's registry, if :ecto is started (a Mix task or a release's eval
+  # may run without it: then no repo runs).
+  defp running_repos do
+    if Process.whereis(Ecto.Repo.Registry), do: Ecto.Repo.all_running(), else: []
   end
 
   defp alive?(pid) when is_pid(pid), do: Process.alive?(pid)

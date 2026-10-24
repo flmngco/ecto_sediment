@@ -25,6 +25,9 @@ defmodule Mix.Tasks.Ecto.Sediment.S3.Rekey do
   (`bin/my_app rpc`), or from `bin/my_app eval` with the application
   stopped (see "Rotating keys" in the S3 guide).
 
+  A repo whose S3 location holds no database prints `no database at
+  <bucket>/<prefix>: wrong bucket or prefix?` and fails the task.
+
   ## Examples
 
       $ mix ecto.sediment.s3.rekey -r MyApp.Repo
@@ -53,23 +56,27 @@ defmodule Mix.Tasks.Ecto.Sediment.S3.Rekey do
       opts = Keyword.take(opts, [:to, :force, :allow_reuse])
       result = Ecto.Adapters.Sediment.s3_rekey(repo, opts)
 
-      case result do
-        {:ok, :current} ->
-          Rotation.info("#{inspect(repo)}: under the key already")
-
-        {:ok, %{from: from, to: to, epoch: epoch}} ->
-          Rotation.info(
-            "#{inspect(repo)}: rekeyed from #{from} to #{to} (epoch #{epoch})"
-          )
-
-        {:error, reason} ->
-          Rotation.error(
-            "#{inspect(repo)}: rekey failed: #{Rotation.reason(reason)} " <>
-              "(keep both keys in every ring and run it again)"
-          )
-      end
+      if Rotation.absent?(result), do: Rotation.absent(repo), else: report(repo, result)
 
       result
     end)
+  end
+
+  defp report(repo, result) do
+    case result do
+      {:ok, :current} ->
+        Rotation.info("#{inspect(repo)}: under the key already")
+
+      {:ok, %{from: from, to: to, epoch: epoch}} ->
+        Rotation.info(
+          "#{inspect(repo)}: rekeyed from #{from} to #{to} (epoch #{epoch})"
+        )
+
+      {:error, reason} ->
+        Rotation.error(
+          "#{inspect(repo)}: rekey failed: #{Rotation.reason(reason)} " <>
+            "(keep both keys in every ring and run it again)"
+        )
+    end
   end
 end

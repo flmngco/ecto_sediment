@@ -17,6 +17,8 @@ defmodule Mix.EctoSediment.Rotation do
 
     Mix.Task.run("app.config", args)
     {:ok, _} = Application.ensure_all_started(:sediment)
+    # Ecto's repo registry: the running-repo check reads it.
+    {:ok, _} = Application.ensure_all_started(:ecto)
 
     repos =
       case parse_repo(args) do
@@ -48,4 +50,19 @@ defmodule Mix.EctoSediment.Rotation do
   @doc false
   def reason(reason) when is_binary(reason), do: reason
   def reason(reason), do: inspect(reason)
+
+  @doc false
+  # A repo whose S3 location holds no database: a wrong bucket or prefix
+  # (an unset environment variable), whose real database still needs its
+  # keys. Never an outcome.
+  def absent(repo) do
+    s3 = repo.config()[:s3] || []
+    place = "#{s3[:bucket]}/#{s3[:prefix]}"
+    error("#{inspect(repo)}: no database at #{place}: wrong bucket or prefix?")
+    {:error, :no_database}
+  end
+
+  @doc false
+  def absent?({:error, "s3 config: no database at " <> _}), do: true
+  def absent?(_result), do: false
 end

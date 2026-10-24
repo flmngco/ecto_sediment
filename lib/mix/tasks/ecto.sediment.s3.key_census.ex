@@ -11,7 +11,9 @@ defmodule Mix.Tasks.Ecto.Sediment.S3.KeyCensus do
   A key can leave the rings once no repo lists it. It reads manifests
   only: safe while the application runs.
 
-  Exits non-zero when a repo's manifest can't be read.
+  Exits non-zero when a repo's manifest can't be read, or its S3 location
+  holds no database ("no database at <bucket>/<prefix>: wrong bucket or
+  prefix?"): a census that found nothing proves nothing about the keys.
 
   ## Examples
 
@@ -31,7 +33,7 @@ defmodule Mix.Tasks.Ecto.Sediment.S3.KeyCensus do
 
       case result do
         {:ok, :no_database} ->
-          Rotation.info("#{inspect(repo)}: no database")
+          Rotation.absent(repo)
 
         {:ok, %{current: current, retained: retained}} ->
           Rotation.info(
@@ -42,8 +44,10 @@ defmodule Mix.Tasks.Ecto.Sediment.S3.KeyCensus do
         {:error, reason} ->
           Rotation.error("#{inspect(repo)}: census failed: #{Rotation.reason(reason)}")
       end
-
-      result
+      |> case do
+        {:error, :no_database} = absent -> absent
+        _printed -> result
+      end
     end)
   end
 

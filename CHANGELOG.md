@@ -24,7 +24,12 @@ CHANGELOG). The Hex dependency is `{:sediment, "~> 0.2.0-beta.1"}`.
     reopens each tenant, so each pauses only for its own rekey).
   * `mix ecto.sediment.s3.rekey`, `mix ecto.sediment.s3.release_key KEY_ID`
     and `mix ecto.sediment.s3.key_census` for named repos (`-r`,
-    repeatable): one line per repo, a non-zero exit on any failure.
+    repeatable): one line per repo, a non-zero exit on any failure. A repo
+    whose S3 location holds no database prints `no database at
+    <bucket>/<prefix>: wrong bucket or prefix?` and fails the task: a
+    misaddressed repo must never read as done, nor its key as removable.
+  * The running-repo check works without `:ecto` started (a release's
+    `eval`); the tasks start `:ecto` so that it sees the repos.
 * Ecto's own configuration errors (`log: :verbose`, a driver missing) keep
   their message through sediment's boundary, under its net.
 * No key shows in an error from a repo configuration or options of the
