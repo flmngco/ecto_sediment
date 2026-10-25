@@ -1214,6 +1214,9 @@ defmodule Ecto.Adapters.Sediment do
 
   defp place(_s3), do: nil
 
+  # The options export_sqlite/3 reads.
+  @export_options [:source, :encryption, :drop_fts]
+
   @doc """
   Exports the repo's database to a new plain SQLite file at `dest` (see
   `Sediment.export_sqlite/3` and sediment's "Leaving Sediment" guide). Also
@@ -1235,13 +1238,30 @@ defmodule Ecto.Adapters.Sediment do
       database; defaults to the repo's `:encryption`.
     * `:drop_fts` - leave Turso FTS indexes out of the copy (without it, a
       database with any is refused).
+
+  Any other option (`:source` too, with `:s3` options) returns `{:error,
+  "... unknown option ..."}` and writes nothing. An S3 repo is exported in
+  its latest state: for a point in time, restore it to a file
+  (`s3_restore/3` with `:at` or `:epoch`), then export that file with
+  `:source`.
   """
   @spec export_sqlite(Ecto.Repo.t() | Keyword.t(), Path.t(), Keyword.t()) ::
           {:ok, map()} | {:error, term()}
   def export_sqlite(repo_or_s3, dest, opts \\ []) do
     Keys.scrubbed(fn ->
       opts = Keys.options!(opts, "Ecto.Adapters.Sediment.export_sqlite/3")
-      export(repo_or_s3, dest, opts)
+      # :source only with a repo module; never a point in time.
+      allowed =
+        if is_list(repo_or_s3), do: [:encryption, :drop_fts], else: @export_options
+
+      case Enum.find(Keyword.keys(opts), &(&1 not in allowed)) do
+        nil ->
+          export(repo_or_s3, dest, opts)
+
+        name ->
+          {:error,
+           "Ecto.Adapters.Sediment.export_sqlite/3: unknown option #{Keys.shown_value(name)}"}
+      end
     end)
   end
 
