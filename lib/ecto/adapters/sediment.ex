@@ -1017,6 +1017,10 @@ defmodule Ecto.Adapters.Sediment do
   new key already): a re-run doesn't reopen a tenant an earlier run left
   closed (failed with `{:around_failed, ...}` or `{:crashed, ...}`).
   Reopen those yourself, from `:on_result` as above, or after the run.
+  Nor does such a re-run remove a working copy left by an earlier run with
+  `keep_working_copy: false` (a removal that failed, a VM stopped after
+  the switch): run `s3_rekey/2` with `keep_working_copy: false` for that
+  tenant, or delete its `:database` files.
 
   See "Rotating keys" in the guide.
   """
@@ -1030,7 +1034,10 @@ defmodule Ecto.Adapters.Sediment do
   `s3_release_key/3` over many repos (see `Sediment.S3.release_key_many/3`),
   with the targets and options of `s3_rekey_many/2`. Likewise, `:around`
   is not called for a tenant with nothing to release: reopen a tenant an
-  earlier run left closed from `:on_result`, or after the run.
+  earlier run left closed from `:on_result`, or after the run. Nor is a
+  working copy an earlier run left with `keep_working_copy: false` removed:
+  run `s3_release_key/3` with `keep_working_copy: false` for that tenant,
+  or delete its `:database` files.
   """
   @spec s3_release_key_many(Enumerable.t(), String.t(), Keyword.t()) :: map()
   def s3_release_key_many(targets, key_id, opts \\ []) do
