@@ -8,7 +8,10 @@ Requires sediment 0.2.0-beta.2 (`{:sediment, "~> 0.2.0-beta.2"}`).
 
 * `s3_restore/3` (and `mix ecto.sediment.s3.restore`) return an error,
   restoring nothing, for an option sediment's restore doesn't know or a
-  target of another form, where the latest state was restored.
+  target of another form, where the latest state was restored. The task
+  passes every target flag it is given, so more than one (`--at`,
+  `--epoch`, `--epoch-start`) fails it, as does a flag given twice, where
+  it used the first and dropped the others.
 * `export_sqlite/3` refuses an option it doesn't read (`at:` or `epoch:`
   exported the latest state; `:source` with `:s3` options), naming it and
   writing nothing. For a point in time, restore to a file with
