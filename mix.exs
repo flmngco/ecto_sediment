@@ -82,7 +82,7 @@ defmodule EctoSediment.MixProject do
     path = System.get_env("SEDIMENT_PATH")
 
     if System.get_env("SEDIMENT_HEX") || (is_nil(path) && not sediment_checkout?()) do
-      [{:sediment, "~> 0.2.0-beta.1"}]
+      [{:sediment, "~> 0.2.0-beta.2"}]
     else
       [{:sediment, path: path || "../sediment"}]
     end

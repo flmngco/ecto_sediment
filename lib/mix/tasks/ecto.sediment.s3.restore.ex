@@ -10,7 +10,8 @@ defmodule Mix.Tasks.Ecto.Sediment.S3.Restore do
     repo: [:string, :keep],
     output: :string,
     at: :string,
-    epoch: :integer,
+    epoch: :string,
+    epoch_start: :string,
     quiet: :boolean,
     no_compile: :boolean,
     no_deps_check: :boolean
@@ -30,6 +31,7 @@ defmodule Mix.Tasks.Ecto.Sediment.S3.Restore do
       $ mix ecto.sediment.s3.restore -r MyApp.Repo -o /tmp/latest.db
       $ mix ecto.sediment.s3.restore -r MyApp.Repo -o /tmp/before.db --at 2026-09-29T21:00:00Z
       $ mix ecto.sediment.s3.restore -r MyApp.Repo -o /tmp/epoch3.db --epoch 3
+      $ mix ecto.sediment.s3.restore -r MyApp.Repo -o /tmp/start.db --epoch-start 00000000000000000003-0000000002
 
   ## Command line options
 
@@ -37,7 +39,11 @@ defmodule Mix.Tasks.Ecto.Sediment.S3.Restore do
     * `-o`, `--output` - the file to restore into (required). It must not
       exist: the task never replaces a file
     * `--at` - an ISO 8601 timestamp: restore the state as of that moment
-    * `--epoch` - restore at an epoch sequence number
+    * `--epoch` - restore an epoch, all of it (its snapshot and its whole
+      log): its sequence number, or the epoch as results print it
+      (`SEQ-GENERATION`)
+    * `--epoch-start` - restore an epoch's snapshot alone, the state at its
+      start (the epoch as for `--epoch`)
     * `-q`, `--quiet` - run the command quietly
     * `--no-compile` - does not compile applications before running
     * `--no-deps-check` - does not check dependencies before running
@@ -73,8 +79,18 @@ defmodule Mix.Tasks.Ecto.Sediment.S3.Restore do
   defp restore_opts(opts) do
     cond do
       at = opts[:at] -> [at: parse_datetime!(at)]
-      epoch = opts[:epoch] -> [epoch: epoch]
+      epoch = opts[:epoch] -> [epoch: parse_epoch(epoch)]
+      epoch = opts[:epoch_start] -> [epoch_start: parse_epoch(epoch)]
       true -> []
+    end
+  end
+
+  # A sequence number, or the epoch as results print it (passed on as is:
+  # sediment parses it, and refuses any other form).
+  defp parse_epoch(epoch) do
+    case Integer.parse(epoch) do
+      {seq, ""} -> seq
+      _ -> epoch
     end
   end
 

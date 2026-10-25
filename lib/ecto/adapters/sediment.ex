@@ -686,7 +686,11 @@ defmodule Ecto.Adapters.Sediment do
   ## Options
 
     * `:at` - a `DateTime`: restore the state as of that moment.
-    * `:epoch` - an epoch sequence number.
+    * `:epoch` - an epoch, all of it: its snapshot plus its whole log (the
+      state as the next epoch began, or the live state for the current
+      one). Its sequence number, or the epoch as results show it
+      (`"SEQ-GENERATION"`).
+    * `:epoch_start` - an epoch's snapshot alone: the state at its start.
     * `:encryption` - `[cipher: ..., key: ...]` of an encrypted database, or
       `false` for an unencrypted one; defaults to the repo's `:encryption` option.
       The restored file stays encrypted with the same key, so open it with the
@@ -694,7 +698,8 @@ defmodule Ecto.Adapters.Sediment do
 
   Point-in-time restores reach back as far as the epochs the writer retains,
   see the `:retain_epochs` option of `Sediment.S3`. Without options, the
-  latest state is restored.
+  latest state is restored. Any other option, or a target of another form,
+  returns `{:error, reason}` and restores nothing.
   """
   @spec s3_restore(Ecto.Repo.t() | Keyword.t(), Path.t(), Keyword.t()) ::
           {:ok, map()} | {:error, term()}
@@ -907,8 +912,10 @@ defmodule Ecto.Adapters.Sediment do
 
   ## Options
 
-  `:encryption`, `:to`, `:force` and `:allow_reuse`, as for
-  `Sediment.S3.rekey/3`. The result is `Sediment.S3.rekey/3`'s: only
+  `:encryption`, `:to`, `:force`, `:allow_reuse` and `:keep_working_copy`
+  (`false` removes the working copy after the rekey: never for a repo's
+  live `:database`, which its next start would then download whole), as
+  for `Sediment.S3.rekey/3`. The result is `Sediment.S3.rekey/3`'s: only
   `{:ok, _}` is an outcome; after any error run it again, with both keys in
   every ring until a run returns `{:ok, _}`.
   """
@@ -930,8 +937,10 @@ defmodule Ecto.Adapters.Sediment do
   (see `Sediment.S3.release_key/4`), so the key can leave the rings. Also
   available as `mix ecto.sediment.s3.release_key`.
 
-  `repo` and the refusals as for `s3_rekey/2`; the options `:encryption`
-  and `:force`. The result is `Sediment.S3.release_key/4`'s.
+  `repo` and the refusals as for `s3_rekey/2`; the options `:encryption`,
+  `:force` and `:keep_working_copy`. The result is
+  `Sediment.S3.release_key/4`'s: `{:error, {:leftover, _}}` when the
+  release happened but deleting its objects failed (run it again).
   """
   @spec s3_release_key(Ecto.Repo.t() | Keyword.t(), String.t(), Keyword.t()) ::
           {:ok, map()} | {:error, term()}
