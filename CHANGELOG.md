@@ -6,6 +6,11 @@ Requires sediment 0.2.0-beta.2 (`{:sediment, "~> 0.2.0-beta.2"}`).
 
 ### Breaking
 
+* `s3_rekey_many/2` and `s3_release_key_many/3` no longer call `:around`
+  for every tenant: one already done is reported without it (sediment's
+  pre-check). A re-run therefore doesn't reopen a tenant an earlier run
+  left closed (`{:around_failed, ...}`, `{:crashed, ...}`): reopen those
+  from `:on_result`, or after the run.
 * `s3_restore/3` (and `mix ecto.sediment.s3.restore`) return an error,
   restoring nothing, for an option sediment's restore doesn't know or a
   target of another form, where the latest state was restored. The task

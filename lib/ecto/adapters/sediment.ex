@@ -1007,8 +1007,16 @@ defmodule Ecto.Adapters.Sediment do
             # failing the target ({:around_failed, reason, rekey_result}).
             :ok = MyApp.Tenants.open(id)
           end
-        end
+        end,
+        # A re-run calls no :around for a tenant already done: reopen any
+        # an earlier run left closed (a no-op for an open tenant).
+        on_result: fn {id, _config}, _result -> MyApp.Tenants.ensure_open(id) end
       )
+
+  `:around` is not called for a tenant the pre-check finds done (under the
+  new key already): a re-run doesn't reopen a tenant an earlier run left
+  closed (failed with `{:around_failed, ...}` or `{:crashed, ...}`).
+  Reopen those yourself, from `:on_result` as above, or after the run.
 
   See "Rotating keys" in the guide.
   """
@@ -1020,7 +1028,9 @@ defmodule Ecto.Adapters.Sediment do
 
   @doc """
   `s3_release_key/3` over many repos (see `Sediment.S3.release_key_many/3`),
-  with the targets and options of `s3_rekey_many/2`.
+  with the targets and options of `s3_rekey_many/2`. Likewise, `:around`
+  is not called for a tenant with nothing to release: reopen a tenant an
+  earlier run left closed from `:on_result`, or after the run.
   """
   @spec s3_release_key_many(Enumerable.t(), String.t(), Keyword.t()) :: map()
   def s3_release_key_many(targets, key_id, opts \\ []) do
