@@ -23,7 +23,10 @@ Requires sediment 0.2.0-beta.2 (`{:sediment, "~> 0.2.0-beta.2"}`).
   `s3_restore/3`, then export it with `:source`.
 * `s3_release_key/3` and `s3_release_key_many/3` return sediment's
   `{:error, {:leftover, ...}}` when the release happened but deleting its
-  objects failed (run it again), where they returned `{:ok, _}`.
+  objects failed (run it again), where they returned `{:ok, _}`. An
+  unreferenced object the store won't delete (object lock, retention, a
+  bucket policy) blocks `{:ok, _}` for that tenant, whatever its key;
+  `Sediment.S3.orphans/1` shows it.
 
 ### Added
 
