@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.2.0-beta.2 (Unreleased)
+
+Requires sediment 0.2.0-beta.2 (`{:sediment, "~> 0.2.0-beta.2"}`).
+
+### Breaking
+
+* `s3_rekey_many/2` and `s3_release_key_many/3` no longer call `:around`
+  for every tenant: one already done is reported without it (sediment's
+  pre-check). A re-run therefore doesn't reopen a tenant an earlier run
+  left closed (`{:around_failed, ...}`, `{:crashed, ...}`): reopen those
+  from `:on_result`, or after the run.
+* `s3_restore/3` (and `mix ecto.sediment.s3.restore`) return an error,
+  restoring nothing, for an option sediment's restore doesn't know or a
+  target of another form, where the latest state was restored. The task
+  passes every target flag it is given, so more than one (`--at`,
+  `--epoch`, `--epoch-start`) fails it, as does a flag given twice, where
+  it used the first and dropped the others.
+* `export_sqlite/3` refuses an option it doesn't read (`at:` or `epoch:`
+  exported the latest state; `:source` with `:s3` options), naming it and
+  writing nothing. For a point in time, restore to a file with
+  `s3_restore/3`, then export it with `:source`.
+* `s3_release_key/3` and `s3_release_key_many/3` return sediment's
+  `{:error, {:leftover, ...}}` when the release happened but deleting its
+  objects failed (run it again), where they returned `{:ok, _}`. An
+  unreferenced object the store won't delete (object lock, retention, a
+  bucket policy) blocks `{:ok, _}` for that tenant, whatever its key;
+  `Sediment.S3.orphans/1` shows it.
+
+### Added
+
+* `s3_restore/3` takes `epoch:` as results print it (`"SEQ-GENERATION"`)
+  and `epoch_start:` (an epoch's snapshot alone); the restore task takes
+  `--epoch` in either form and `--epoch-start`.
+* `s3_rekey/2`, `s3_release_key/3` and their many variants pass
+  `keep_working_copy:` on (`false` removes the working copy after the run,
+  for offline runs through a scratch directory; the Mix tasks keep the
+  repos' copies).
+* `s3_rekey_many/2` and `s3_release_key_many/3` report a tenant that needs
+  nothing without calling `:around` (sediment's pre-check), so a re-run
+  closes only the tenants that still need it; a ring with other key
+  material under a recorded id fails before `:around`.
+* `s3_key_census_many/2` returns each tenant's key fingerprints, for
+  `Sediment.S3.check_ring/2`. The S3 guide's "Rotating keys" covers
+  `check_ring/2`, `space_needed/3` and `orphans/1`.
+
 ## 0.2.0-beta.1 (2026-10-24)
 
 0.2 breaks 0.1, with sediment 0.2: the S3 manifest is version 4, the repo's

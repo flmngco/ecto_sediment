@@ -198,6 +198,24 @@ defmodule Ecto.Integration.S3RotationTest do
     assert_received {:paused, "acme", other_running: true}
     assert_received {:paused, "globex", other_running: true}
 
+    # A re-run finds both current before :around: no tenant is closed.
+    rerun =
+      Adapter.s3_rekey_many(
+        for(
+          {id, config} <- tenants,
+          do: {id, Keyword.put(config, :encryption, ring(["r2", "r1"]))}
+        ),
+        around: fn {id, _config}, rekey ->
+          send(test, {:paused, id, other_running: nil})
+          rekey.()
+        end
+      )
+
+    assert %{current: current, rekeyed: [], failed: []} = rerun
+    assert Enum.sort(current) == ["acme", "globex"]
+    refute_received {:paused, _, _}
+    assert Enum.all?(Map.keys(tenants), &:ets.member(running, &1))
+
     for {id, _config} <- tenants do
       [{^id, pid}] = :ets.lookup(running, id)
       Repo.put_dynamic_repo(pid)

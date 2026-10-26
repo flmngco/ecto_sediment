@@ -9,8 +9,9 @@ defmodule Mix.Tasks.Ecto.Sediment.S3.Restore do
   @switches [
     repo: [:string, :keep],
     output: :string,
-    at: :string,
-    epoch: :integer,
+    at: [:string, :keep],
+    epoch: [:string, :keep],
+    epoch_start: [:string, :keep],
     quiet: :boolean,
     no_compile: :boolean,
     no_deps_check: :boolean
@@ -30,6 +31,7 @@ defmodule Mix.Tasks.Ecto.Sediment.S3.Restore do
       $ mix ecto.sediment.s3.restore -r MyApp.Repo -o /tmp/latest.db
       $ mix ecto.sediment.s3.restore -r MyApp.Repo -o /tmp/before.db --at 2026-09-29T21:00:00Z
       $ mix ecto.sediment.s3.restore -r MyApp.Repo -o /tmp/epoch3.db --epoch 3
+      $ mix ecto.sediment.s3.restore -r MyApp.Repo -o /tmp/start.db --epoch-start 00000000000000000003-0000000002
 
   ## Command line options
 
@@ -37,7 +39,14 @@ defmodule Mix.Tasks.Ecto.Sediment.S3.Restore do
     * `-o`, `--output` - the file to restore into (required). It must not
       exist: the task never replaces a file
     * `--at` - an ISO 8601 timestamp: restore the state as of that moment
-    * `--epoch` - restore at an epoch sequence number
+    * `--epoch` - restore an epoch, all of it (its snapshot and its whole
+      log): its sequence number, or the epoch as results print it
+      (`SEQ-GENERATION`)
+    * `--epoch-start` - restore an epoch's snapshot alone, the state at its
+      start (the epoch as for `--epoch`)
+
+  At most one of `--at`, `--epoch` and `--epoch-start`, each once: the task
+  fails otherwise.
     * `-q`, `--quiet` - run the command quietly
     * `--no-compile` - does not compile applications before running
     * `--no-deps-check` - does not check dependencies before running
@@ -70,11 +79,31 @@ defmodule Mix.Tasks.Ecto.Sediment.S3.Restore do
     end
   end
 
+  # Every target flag given, passed on: the restore refuses more than one
+  # (never one picked and the others dropped). A flag given twice is
+  # refused here (the parser would keep only one).
   defp restore_opts(opts) do
-    cond do
-      at = opts[:at] -> [at: parse_datetime!(at)]
-      epoch = opts[:epoch] -> [epoch: epoch]
-      true -> []
+    for name <- [:at, :epoch, :epoch_start],
+        values = Keyword.get_values(opts, name),
+        values != [] do
+      case values do
+        [value] -> {name, parse_target(name, value)}
+        _ -> Mix.raise("ecto.sediment.s3.restore: --#{flag(name)} given more than once")
+      end
+    end
+  end
+
+  defp parse_target(:at, value), do: parse_datetime!(value)
+  defp parse_target(_epoch, value), do: parse_epoch(value)
+
+  defp flag(name), do: name |> Atom.to_string() |> String.replace("_", "-")
+
+  # A sequence number, or the epoch as results print it (passed on as is:
+  # sediment parses it, and refuses any other form).
+  defp parse_epoch(epoch) do
+    case Integer.parse(epoch) do
+      {seq, ""} -> seq
+      _ -> epoch
     end
   end
 

@@ -146,7 +146,7 @@ defmodule Mix.Tasks.Ecto.Sediment.S3.RotationTest do
            Keyword.put(
              s3_opts("p"),
              :bucket,
-             "td9qug-none-#{System.unique_integer([:positive])}"
+             "rotation-none-#{System.unique_integer([:positive])}"
            )}
         ] do
       Application.put_env(:ecto_sediment, DynamicRepo,

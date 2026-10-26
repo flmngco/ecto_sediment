@@ -686,7 +686,11 @@ defmodule Ecto.Adapters.Sediment do
   ## Options
 
     * `:at` - a `DateTime`: restore the state as of that moment.
-    * `:epoch` - an epoch sequence number.
+    * `:epoch` - an epoch, all of it: its snapshot plus its whole log (the
+      state as the next epoch began, or the live state for the current
+      one). Its sequence number, or the epoch as results show it
+      (`"SEQ-GENERATION"`).
+    * `:epoch_start` - an epoch's snapshot alone: the state at its start.
     * `:encryption` - `[cipher: ..., key: ...]` of an encrypted database, or
       `false` for an unencrypted one; defaults to the repo's `:encryption` option.
       The restored file stays encrypted with the same key, so open it with the
@@ -694,7 +698,8 @@ defmodule Ecto.Adapters.Sediment do
 
   Point-in-time restores reach back as far as the epochs the writer retains,
   see the `:retain_epochs` option of `Sediment.S3`. Without options, the
-  latest state is restored.
+  latest state is restored. Any other option, or a target of another form,
+  returns `{:error, reason}` and restores nothing.
   """
   @spec s3_restore(Ecto.Repo.t() | Keyword.t(), Path.t(), Keyword.t()) ::
           {:ok, map()} | {:error, term()}
@@ -907,8 +912,10 @@ defmodule Ecto.Adapters.Sediment do
 
   ## Options
 
-  `:encryption`, `:to`, `:force` and `:allow_reuse`, as for
-  `Sediment.S3.rekey/3`. The result is `Sediment.S3.rekey/3`'s: only
+  `:encryption`, `:to`, `:force`, `:allow_reuse` and `:keep_working_copy`
+  (`false` removes the working copy after the rekey: never for a repo's
+  live `:database`, which its next start would then download whole), as
+  for `Sediment.S3.rekey/3`. The result is `Sediment.S3.rekey/3`'s: only
   `{:ok, _}` is an outcome; after any error run it again, with both keys in
   every ring until a run returns `{:ok, _}`.
   """
@@ -930,8 +937,10 @@ defmodule Ecto.Adapters.Sediment do
   (see `Sediment.S3.release_key/4`), so the key can leave the rings. Also
   available as `mix ecto.sediment.s3.release_key`.
 
-  `repo` and the refusals as for `s3_rekey/2`; the options `:encryption`
-  and `:force`. The result is `Sediment.S3.release_key/4`'s.
+  `repo` and the refusals as for `s3_rekey/2`; the options `:encryption`,
+  `:force` and `:keep_working_copy`. The result is
+  `Sediment.S3.release_key/4`'s: `{:error, {:leftover, _}}` when the
+  release happened but deleting its objects failed (run it again).
   """
   @spec s3_release_key(Ecto.Repo.t() | Keyword.t(), String.t(), Keyword.t()) ::
           {:ok, map()} | {:error, term()}
@@ -998,8 +1007,20 @@ defmodule Ecto.Adapters.Sediment do
             # failing the target ({:around_failed, reason, rekey_result}).
             :ok = MyApp.Tenants.open(id)
           end
-        end
+        end,
+        # A re-run calls no :around for a tenant already done: reopen any
+        # an earlier run left closed (a no-op for an open tenant).
+        on_result: fn {id, _config}, _result -> MyApp.Tenants.ensure_open(id) end
       )
+
+  `:around` is not called for a tenant the pre-check finds done (under the
+  new key already): a re-run doesn't reopen a tenant an earlier run left
+  closed (failed with `{:around_failed, ...}` or `{:crashed, ...}`).
+  Reopen those yourself, from `:on_result` as above, or after the run.
+  Nor does such a re-run remove a working copy left by an earlier run with
+  `keep_working_copy: false` (a removal that failed, a VM stopped after
+  the switch): run `s3_rekey/2` with `keep_working_copy: false` for that
+  tenant, or delete its `:database` files.
 
   See "Rotating keys" in the guide.
   """
@@ -1011,7 +1032,12 @@ defmodule Ecto.Adapters.Sediment do
 
   @doc """
   `s3_release_key/3` over many repos (see `Sediment.S3.release_key_many/3`),
-  with the targets and options of `s3_rekey_many/2`.
+  with the targets and options of `s3_rekey_many/2`. Likewise, `:around`
+  is not called for a tenant with nothing to release: reopen a tenant an
+  earlier run left closed from `:on_result`, or after the run. Nor is a
+  working copy an earlier run left with `keep_working_copy: false` removed:
+  run `s3_release_key/3` with `keep_working_copy: false` for that tenant,
+  or delete its `:database` files.
   """
   @spec s3_release_key_many(Enumerable.t(), String.t(), Keyword.t()) :: map()
   def s3_release_key_many(targets, key_id, opts \\ []) do
@@ -1205,6 +1231,9 @@ defmodule Ecto.Adapters.Sediment do
 
   defp place(_s3), do: nil
 
+  # The options export_sqlite/3 reads.
+  @export_options [:source, :encryption, :drop_fts]
+
   @doc """
   Exports the repo's database to a new plain SQLite file at `dest` (see
   `Sediment.export_sqlite/3` and sediment's "Leaving Sediment" guide). Also
@@ -1226,13 +1255,30 @@ defmodule Ecto.Adapters.Sediment do
       database; defaults to the repo's `:encryption`.
     * `:drop_fts` - leave Turso FTS indexes out of the copy (without it, a
       database with any is refused).
+
+  Any other option (`:source` too, with `:s3` options) returns `{:error,
+  "... unknown option ..."}` and writes nothing. An S3 repo is exported in
+  its latest state: for a point in time, restore it to a file
+  (`s3_restore/3` with `:at` or `:epoch`), then export that file with
+  `:source`.
   """
   @spec export_sqlite(Ecto.Repo.t() | Keyword.t(), Path.t(), Keyword.t()) ::
           {:ok, map()} | {:error, term()}
   def export_sqlite(repo_or_s3, dest, opts \\ []) do
     Keys.scrubbed(fn ->
       opts = Keys.options!(opts, "Ecto.Adapters.Sediment.export_sqlite/3")
-      export(repo_or_s3, dest, opts)
+      # :source only with a repo module; never a point in time.
+      allowed =
+        if is_list(repo_or_s3), do: [:encryption, :drop_fts], else: @export_options
+
+      case Enum.find(Keyword.keys(opts), &(&1 not in allowed)) do
+        nil ->
+          export(repo_or_s3, dest, opts)
+
+        name ->
+          {:error,
+           "Ecto.Adapters.Sediment.export_sqlite/3: unknown option #{Keys.shown_value(name)}"}
+      end
     end)
   end
 
